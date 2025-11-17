@@ -1,0 +1,193 @@
+version: 2
+
+# Project metadata
+project_name: txtr
+
+# Environment variables
+env:
+  - GO111MODULE=on
+
+# Pre-release hooks
+before:
+  hooks:
+    - go mod tidy
+    - go test -v ./...
+
+# Binary builds
+builds:
+  - id: txtr
+    main: ./cmd/txtr
+    binary: txtr
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+      - freebsd
+    goarch:
+      - amd64
+      - arm64
+      - arm
+    goarm:
+      - 6
+      - 7
+    ignore:
+      - goos: darwin
+        goarch: arm
+      - goos: windows
+        goarch: arm
+      - goos: freebsd
+        goarch: arm
+    ldflags:
+      - -s -w
+      - -extldflags "-static"
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.CommitDate}}
+      - -X main.builtBy=goreleaser
+    flags:
+      - -trimpath
+    tags:
+      - netgo
+      - osusergo
+    mod_timestamp: '{{.CommitTimestamp}}'
+
+# Archives
+archives:
+  - id: txtr
+    formats:
+      - tar.gz
+      - zip
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+      - goos: darwin
+        formats:
+          - tar.gz
+      - goos: linux
+        formats:
+          - tar.gz
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
+    files:
+      - LICENSE
+      - README.md
+      - CLAUDE.md
+
+# Container images with Ko
+kos:
+  - id: txtr-ko
+    build: txtr
+    main: ./cmd/txtr
+    base_image: cgr.dev/chainguard/static
+    repositories:
+      - ghcr.io/richardwooding/txtr
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    tags:
+      - latest
+      - '{{.Version}}'
+      - '{{.Major}}.{{.Minor}}'
+      - '{{.Major}}'
+    bare: true
+    preserve_import_paths: false
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -extldflags "-static"
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.CommitDate}}
+      - -X main.builtBy=goreleaser
+    env:
+      - CGO_ENABLED=0
+    sbom: spdx
+    labels:
+      org.opencontainers.image.title: txtr
+      org.opencontainers.image.description: GNU strings clone written in Go
+      org.opencontainers.image.url: https://github.com/richardwooding/txtr
+      org.opencontainers.image.source: https://github.com/richardwooding/txtr
+      org.opencontainers.image.version: '{{.Version}}'
+      org.opencontainers.image.created: '{{.Date}}'
+      org.opencontainers.image.revision: '{{.FullCommit}}'
+      org.opencontainers.image.licenses: MIT
+      org.opencontainers.image.vendor: Richard Wooding
+
+# Checksums
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+# Snapshot (for testing)
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+# Changelog
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - 'typo'
+  groups:
+    - title: 'New Features'
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: 'Bug Fixes'
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: 'Performance Improvements'
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: 'Other Changes'
+      order: 999
+
+# GitHub Release
+release:
+  github:
+    owner: richardwooding
+    name: txtr
+  draft: false
+  prerelease: auto
+  mode: append
+  header: |
+    ## txtr {{ .Tag }}
+
+    GNU strings clone written in Go.
+
+    ### Installation
+
+    #### Binary Download
+    Download the appropriate binary for your platform from the assets below.
+
+    #### Container Image
+    ```bash
+    docker pull ghcr.io/richardwooding/txtr:{{ .Tag }}
+    docker run --rm ghcr.io/richardwooding/txtr:{{ .Tag }} --version
+    ```
+
+    #### Go Install
+    ```bash
+    go install github.com/richardwooding/txtr/cmd/txtr@{{ .Tag }}
+    ```
+
+    #### Homebrew (coming soon)
+    ```bash
+    brew install richardwooding/tap/txtr
+    ```
+
+  footer: |
+    ---
+
+    **Full Changelog**: https://github.com/richardwooding/txtr/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+    ### Verification
+
+    **Checksums**: See `checksums.txt` in the assets below
+    **SBOM**: Software Bill of Materials included in container images

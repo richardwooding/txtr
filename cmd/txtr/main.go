@@ -12,7 +12,13 @@ import (
 	"github.com/richardwooding/txtr/internal/printer"
 )
 
-const version = "2.0.0"
+// Build information (set by goreleaser via ldflags)
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+	builtBy = "unknown"
+)
 
 // CLI defines the command-line interface structure
 type CLI struct {
@@ -44,6 +50,15 @@ func main() {
 	// Handle version flag
 	if cli.Version || cli.VersionAlt {
 		fmt.Printf("txtr %s\n", version)
+		if commit != "none" {
+			fmt.Printf("  commit: %s\n", commit)
+		}
+		if date != "unknown" {
+			fmt.Printf("  built: %s\n", date)
+		}
+		if builtBy != "unknown" {
+			fmt.Printf("  built by: %s\n", builtBy)
+		}
 		fmt.Println("GNU strings compatible utility written in Go")
 		os.Exit(0)
 	}
