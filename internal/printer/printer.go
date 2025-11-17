@@ -29,5 +29,11 @@ func PrintString(str []byte, filename string, offset int64, config extractor.Con
 		prefix += offsetStr
 	}
 
-	fmt.Printf("%s%s\n", prefix, string(str))
+	// Use custom output separator if specified, otherwise use newline
+	separator := config.OutputSeparator
+	if separator == "" {
+		separator = "\n"
+	}
+
+	fmt.Printf("%s%s%s", prefix, string(str), separator)
 }
