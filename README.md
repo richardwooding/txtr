@@ -6,17 +6,102 @@ Extracts printable strings from binary files. Aims to be compatible with GNU str
 
 ## Installation
 
+### Pre-built Binaries (Recommended)
+
+Download the latest release for your platform from the [GitHub Releases page](https://github.com/richardwooding/txtr/releases).
+
+**Current stable version: v2.0.1**
+
+Available for:
+- **Linux**: amd64, arm64, armv6, armv7
+- **macOS**: amd64 (Intel), arm64 (Apple Silicon)
+- **Windows**: amd64, arm64
+- **FreeBSD**: amd64, arm64
+
+**Example (Linux amd64):**
 ```bash
-# Build the binary
+# Download
+curl -LO https://github.com/richardwooding/txtr/releases/download/v2.0.1/txtr_2.0.1_linux_amd64.tar.gz
+
+# Extract
+tar -xzf txtr_2.0.1_linux_amd64.tar.gz
+
+# Move to PATH
+sudo mv txtr /usr/local/bin/
+
+# Verify
+txtr --version
+```
+
+**Verify checksums:**
+```bash
+# Download checksums
+curl -LO https://github.com/richardwooding/txtr/releases/download/v2.0.1/checksums.txt
+
+# Verify (Linux/macOS)
+sha256sum -c checksums.txt 2>&1 | grep OK
+```
+
+### Container Images
+
+Pull from GitHub Container Registry:
+
+```bash
+# Latest release
+docker pull ghcr.io/richardwooding/txtr:latest
+
+# Specific version
+docker pull ghcr.io/richardwooding/txtr:v2.0.1
+
+# Run on a file
+docker run --rm -v $(pwd):/data ghcr.io/richardwooding/txtr:latest /data/file.bin
+
+# Run with stdin
+cat file.bin | docker run --rm -i ghcr.io/richardwooding/txtr:latest
+```
+
+**Multi-platform support**: linux/amd64, linux/arm64
+
+### Go Install
+
+For Go developers:
+
+```bash
+# Latest version
+go install github.com/richardwooding/txtr/cmd/txtr@latest
+
+# Specific version
+go install github.com/richardwooding/txtr/cmd/txtr@v2.0.1
+```
+
+### Build from Source
+
+For development or if pre-built binaries aren't available for your platform:
+
+```bash
+# Clone the repository
+git clone https://github.com/richardwooding/txtr.git
+cd txtr
+
+# Build
 go build -o txtr ./cmd/txtr
 
-# Or install it
+# Or install to $GOPATH/bin
 go install ./cmd/txtr
 ```
 
 ## Usage
 
 ```bash
+# Show version information
+txtr --version
+# Output:
+# txtr v2.0.1
+#   commit: cec6729
+#   built: 2025-11-17T12:00:00Z
+#   built by: goreleaser
+# GNU strings compatible utility written in Go
+
 # Extract strings from a file (default minimum length: 4)
 txtr file.bin
 
@@ -114,8 +199,53 @@ txtr/
 └── README.md
 ```
 
+## Releases
+
+**Current stable version**: v2.0.1
+
+Releases are automatically built and published via GitHub Actions when a new git tag is pushed. Each release includes:
+
+- **Pre-built binaries** for 10+ OS/architecture combinations
+- **Container images** published to ghcr.io
+- **Checksums** (SHA256) for verification
+- **SBOM** (Software Bill of Materials) in SPDX format
+- **Automated changelog** from commit history
+
+**Platform Support Matrix:**
+
+| OS | Architectures |
+|---|---|
+| Linux | amd64, arm64, armv6, armv7 |
+| macOS | amd64 (Intel), arm64 (Apple Silicon) |
+| Windows | amd64, arm64 |
+| FreeBSD | amd64, arm64 |
+
+**Container Images:**
+
+| Registry | Platforms |
+|---|---|
+| ghcr.io/richardwooding/txtr | linux/amd64, linux/arm64 |
+
+Visit the [Releases page](https://github.com/richardwooding/txtr/releases) to download the latest version.
+
 ## Dependencies
 
+**Runtime:**
+- [Kong v1.7.0](https://github.com/alecthomas/kong) - Command-line parser (only external dependency)
+
+**Build:**
 - Go 1.25
-- [Kong](https://github.com/alecthomas/kong) - Command-line parser
+
+**Features:**
+- ✅ Zero CGO dependencies - fully static binaries
+- ✅ No external libraries required at runtime
+- ✅ Works on any system without libc or other dependencies
+
+## Security
+
+- **Static binaries**: No dynamic dependencies, reducing attack surface
+- **SBOM included**: Every release includes Software Bill of Materials for supply chain security
+- **Checksums**: SHA256 checksums provided for verification
+- **Minimal container images**: Based on Chainguard static image (~2MB base)
+- **Reproducible builds**: Same source produces identical binaries
 
