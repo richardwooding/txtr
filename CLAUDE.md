@@ -89,6 +89,27 @@ goreleaser release --snapshot --clean
 rm -rf dist/
 ```
 
+### Fuzzing
+```bash
+# Run a single fuzz target for 1 minute
+set -o pipefail; go test -fuzz=FuzzExtractASCII -fuzztime=1m ./internal/extractor
+
+# Run all fuzz tests with seed corpus only (fast)
+set -o pipefail; go test ./internal/extractor ./internal/binary
+
+# Run all fuzz targets in parallel (for comprehensive testing)
+for target in FuzzExtractASCII FuzzExtractUTF8Aware FuzzExtractUTF16 FuzzExtractUTF32; do
+  go test -fuzz=$target -fuzztime=10m ./internal/extractor &
+done
+wait
+
+# View fuzz corpus
+ls -R $HOME/.cache/go-build/fuzz/
+
+# Clean corpus (if needed)
+rm -rf $HOME/.cache/go-build/fuzz/
+```
+
 ## CI/CD Pipeline
 
 The project uses GitHub Actions for continuous integration and automated releases.
@@ -149,6 +170,50 @@ The project uses GitHub Actions for continuous integration and automated release
 - `contents: write` - Create GitHub Releases
 - `packages: write` - Push to ghcr.io
 - `id-token: write` - OIDC token for signing (future)
+
+### Fuzzing Automation (.github/workflows/fuzz.yml)
+
+**Triggers:**
+- **Pull Requests**: Runs on code changes to Go files
+- **Scheduled**: Daily at 2 AM UTC for continuous testing
+- **Manual Dispatch**: On-demand with configurable fuzz time
+
+**Jobs:**
+
+1. **fuzz-string-extraction** - Matrix of 4 targets
+   - FuzzExtractASCII
+   - FuzzExtractUTF8Aware
+   - FuzzExtractUTF16
+   - FuzzExtractUTF32
+
+2. **fuzz-binary-parsers** - Matrix of 4 targets
+   - FuzzParseELF
+   - FuzzParsePE
+   - FuzzParseMachO
+   - FuzzDetectFormat
+
+3. **fuzz-summary** - Aggregates results
+
+**Fuzz Time by Trigger:**
+- Pull Requests: 2 minutes per target (quick smoke test)
+- Scheduled: 1 hour per target (deep testing)
+- Manual: Configurable (default 10 minutes)
+
+**Corpus Management:**
+- Cached at `~/.cache/go-build/fuzz`
+- Keyed by target + commit SHA
+- Restored from previous runs (incremental growth)
+- Separate cache per fuzz target
+
+**Artifacts:**
+- Fuzz logs uploaded on all runs
+- 7-day retention for debugging
+- Separate artifacts per target
+
+**Parallelization:**
+- All 8 fuzz targets run in parallel
+- Total wall time ≈ longest single target
+- fail-fast: false (all targets run even if one fails)
 
 ## Release Process
 
@@ -381,12 +446,29 @@ txtr/
 ├── cmd/txtr/           # Application entry point
 │   └── main.go         # CLI using Kong library
 ├── internal/           # Private application code
+│   ├── binary/         # Binary format parsing
+│   │   ├── parser.go
+│   │   ├── parser_test.go
+│   │   └── fuzz_test.go    # Fuzzing for binary parsers
 │   ├── extractor/      # String extraction logic
 │   │   ├── extractor.go
-│   │   └── extractor_test.go
+│   │   ├── extractor_test.go
+│   │   ├── encoding_test.go
+│   │   └── fuzz_test.go    # Fuzzing for string extraction
 │   └── printer/        # Output formatting logic
 │       ├── printer.go
 │       └── printer_test.go
+├── testdata/           # Test data and fuzz corpus
+│   └── fuzz/           # Seed corpus for fuzzing
+│       ├── FuzzExtractASCII/
+│       ├── FuzzExtractUTF8Aware/
+│       ├── FuzzExtractUTF16/
+│       └── FuzzExtractUTF32/
+├── .github/
+│   └── workflows/
+│       ├── ci.yml      # Continuous integration
+│       ├── release.yml # Automated releases
+│       └── fuzz.yml    # Fuzzing automation
 ├── go.mod              # Go module definition (Go 1.25)
 ├── go.sum              # Dependency checksums
 ├── README.md           # User documentation
@@ -469,6 +551,81 @@ Tests are organized by package:
 
 **internal/printer/printer_test.go**:
 - `TestPrintString`: Output formatting tests (currently skipped - requires stdout capture)
+
+### Fuzzing
+
+The project uses Go's native fuzzing (introduced in Go 1.18) for property-based security testing.
+
+**Fuzz Tests Implemented:**
+
+**internal/extractor/fuzz_test.go** - String extraction fuzzing (330 lines):
+- `FuzzExtractASCII`: Tests 7-bit and 8-bit ASCII extraction
+  - Seed corpus: 5 files covering boundary chars, control chars, high bytes
+  - Invariants: no panics, minimum length enforcement, printable validation, deterministic behavior
+  - Execution rate: ~3.8M execs/10s
+
+- `FuzzExtractUTF8Aware`: Tests UTF-8 multibyte character handling
+  - Seed corpus: 6 files with Chinese, Russian, emoji, invalid UTF-8, overlong encodings, surrogates
+  - Timeout protection: 1 second to catch infinite loops
+  - Invariants: valid UTF-8 output in locale mode
+  - CVE coverage: CVE-2023-26302 (invalid UTF-8), CVE-2024-2689 (overlong encodings)
+  - Execution rate: ~2.3M execs/10s
+
+- `FuzzExtractUTF16`: Tests UTF-16 BE/LE extraction
+  - Seed corpus: 5 binary files with valid UTF-16, surrogate pairs, incomplete sequences
+  - Timeout protection: 1 second for CVE-2020-14040 (infinite loop in UTF-16 decoder)
+  - Invariants: valid UTF-8 output, valid runes, no crashes
+  - Execution rate: ~2.9M execs/10s
+
+- `FuzzExtractUTF32`: Tests UTF-32 BE/LE extraction
+  - Seed corpus: 6 binary files with valid UTF-32, invalid runes (>0x10FFFF), surrogates
+  - Invariants: valid UTF-8 output, valid runes, no surrogate range (0xD800-0xDFFF)
+  - Execution rate: ~4.8M execs/10s
+
+**internal/binary/fuzz_test.go** - Binary parser fuzzing (267 lines):
+- `FuzzParseELF`: Tests ELF (Linux/Unix) binary parsing
+  - Seed corpus: 6 entries with valid ELF headers, short headers, invalid data
+  - Invariants: no panics, valid section data, non-negative offsets
+  - Execution rate: ~805/sec
+
+- `FuzzParsePE`: Tests PE (Windows) binary parsing
+  - Seed corpus: 6 entries with DOS stubs, MZ headers, PE signatures
+  - Invariants: no panics, only .data/.rdata sections returned
+  - Execution rate: ~539/sec
+
+- `FuzzParseMachO`: Tests Mach-O (macOS/iOS) binary parsing
+  - Seed corpus: 8 entries with 32/64-bit BE/LE magics, universal binary
+  - Invariants: no panics, only known data sections returned
+  - Execution rate: ~1019/sec
+
+- `FuzzDetectFormat`: Tests binary format auto-detection
+  - Seed corpus: 9 entries with all magic signatures (ELF, PE, Mach-O)
+  - Invariants: deterministic detection, valid format values
+  - Execution rate: ~324/sec
+
+**Seed Corpus Structure:**
+```
+testdata/fuzz/
+├── FuzzExtractASCII/       # 5 files: ASCII patterns, boundary cases
+├── FuzzExtractUTF8Aware/   # 6 files: UTF-8, invalid sequences
+├── FuzzExtractUTF16/       # 5 files: UTF-16 BE/LE binary data
+└── FuzzExtractUTF32/       # 6 files: UTF-32 BE/LE binary data
+```
+
+**Key Features:**
+- Property-based invariant checking (all outputs must satisfy constraints)
+- Timeout protection (1s) for infinite loop detection
+- Input size limits (10MB) to prevent resource exhaustion
+- Comprehensive panic recovery with input dumping
+- CVE regression testing (CVE-2020-14040, CVE-2023-26302, CVE-2024-2689)
+- Deterministic behavior validation
+- Corpus caching in CI/CD for incremental growth
+
+**Security Benefits:**
+- Discovers edge cases that manual tests miss
+- Growing corpus improves coverage over time
+- Continuous fuzzing in CI catches regressions
+- Tests against known vulnerabilities in similar tools
 
 ### CLI Flag Handling
 

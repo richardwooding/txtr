@@ -186,6 +186,7 @@ txtr -f file1.bin file2.bin
 - **Modern CLI**: Built with Kong for clean, declarative argument parsing
 - **Clean Architecture**: Follows Standard Go Project Layout for maintainability
 - **Comprehensive Testing**: Full test coverage for all encoding formats
+- **Continuous Fuzzing**: 8 fuzz targets with daily automated execution for security
 
 ## Project Structure
 
