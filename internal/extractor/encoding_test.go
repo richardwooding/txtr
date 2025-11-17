@@ -1,3 +1,5 @@
+// Package extractor provides functionality for extracting printable strings
+// from binary data in various encodings including ASCII, UTF-8, UTF-16, and UTF-32.
 package extractor
 
 import (
@@ -48,7 +50,7 @@ func TestExtractUTF8(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var result []byte
-			printFunc := func(str []byte, filename string, offset int64, config Config) {
+			printFunc := func(str []byte, _ string, _ int64, _ Config) {
 				result = append(result, str...)
 			}
 
@@ -79,7 +81,7 @@ func TestExtractUTF16LE(t *testing.T) {
 	}
 
 	var result []byte
-	printFunc := func(str []byte, filename string, offset int64, config Config) {
+	printFunc := func(str []byte, _ string, _ int64, _ Config) {
 		result = append(result, str...)
 	}
 
@@ -107,7 +109,7 @@ func TestExtractUTF16BE(t *testing.T) {
 	}
 
 	var result []byte
-	printFunc := func(str []byte, filename string, offset int64, config Config) {
+	printFunc := func(str []byte, _ string, _ int64, _ Config) {
 		result = append(result, str...)
 	}
 
@@ -134,7 +136,7 @@ func TestExtractUTF32LE(t *testing.T) {
 	}
 
 	var result []byte
-	printFunc := func(str []byte, filename string, offset int64, config Config) {
+	printFunc := func(str []byte, _ string, _ int64, _ Config) {
 		result = append(result, str...)
 	}
 
@@ -161,7 +163,7 @@ func TestExtractUTF32BE(t *testing.T) {
 	}
 
 	var result []byte
-	printFunc := func(str []byte, filename string, offset int64, config Config) {
+	printFunc := func(str []byte, _ string, _ int64, _ Config) {
 		result = append(result, str...)
 	}
 
@@ -201,7 +203,7 @@ func TestIncludeAllWhitespace(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var result []byte
-			printFunc := func(str []byte, filename string, offset int64, config Config) {
+			printFunc := func(str []byte, _ string, _ int64, _ Config) {
 				result = append(result, str...)
 			}
 
@@ -248,7 +250,7 @@ func Test8BitASCII(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var result []byte
-			printFunc := func(str []byte, filename string, offset int64, config Config) {
+			printFunc := func(str []byte, _ string, _ int64, _ Config) {
 				result = append(result, str...)
 			}
 

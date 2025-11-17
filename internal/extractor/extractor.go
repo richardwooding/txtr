@@ -1,3 +1,5 @@
+// Package extractor provides functionality for extracting printable strings
+// from binary data in various encodings including ASCII, UTF-8, UTF-16, and UTF-32.
 package extractor
 
 import (
@@ -20,8 +22,8 @@ type Config struct {
 	Unicode              string // UTF-8 handling mode: default/invalid/locale/escape/hex/highlight
 	OutputSeparator      string
 	IncludeAllWhitespace bool
-	ScanAll              bool // Scan entire file
-	ScanDataOnly         bool // Scan only data sections (requires binary format detection)
+	ScanAll              bool   // Scan entire file
+	ScanDataOnly         bool   // Scan only data sections (requires binary format detection)
 	TargetFormat         string // Target binary format: elf/pe/macho/binary
 }
 
@@ -149,7 +151,7 @@ func extractUTF8Aware(reader io.Reader, filename string, config Config, printFun
 				if err != nil || (nextByte&0xC0) != 0x80 {
 					valid = false
 					if err == nil {
-						bufReader.UnreadByte()
+						_ = bufReader.UnreadByte()
 					}
 					break
 				}
@@ -350,7 +352,7 @@ func isPrintableRune(r rune, includeAllWhitespace bool) bool {
 }
 
 // ExtractFromSection extracts strings from a specific section's data
-func ExtractFromSection(data []byte, sectionName string, sectionOffset int64, filename string, config Config, printFunc func([]byte, string, int64, Config)) {
+func ExtractFromSection(data []byte, _ string, sectionOffset int64, filename string, config Config, printFunc func([]byte, string, int64, Config)) {
 	// Use appropriate extraction based on encoding
 	switch config.Encoding {
 	case "s": // 7-bit ASCII

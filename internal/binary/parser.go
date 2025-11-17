@@ -1,3 +1,5 @@
+// Package binary provides utilities for detecting and parsing binary file formats
+// including ELF, PE, and Mach-O.
 package binary
 
 import (
@@ -8,15 +10,20 @@ import (
 	"os"
 )
 
-// BinaryFormat represents the type of binary file
-type BinaryFormat int
+// Format represents the type of binary file
+type Format int
 
 const (
-	FormatUnknown BinaryFormat = iota
+	// FormatUnknown indicates an unknown or unsupported binary format
+	FormatUnknown Format = iota
+	// FormatELF indicates an ELF (Executable and Linkable Format) binary
 	FormatELF
+	// FormatPE indicates a PE (Portable Executable) binary
 	FormatPE
+	// FormatMachO indicates a Mach-O (Mach Object) binary
 	FormatMachO
-	FormatRaw // Raw binary, no structure
+	// FormatRaw indicates a raw binary with no specific structure
+	FormatRaw
 )
 
 // Section represents a section in a binary file
@@ -28,12 +35,14 @@ type Section struct {
 }
 
 // DetectFormat attempts to auto-detect the binary format
-func DetectFormat(path string) (BinaryFormat, error) {
+func DetectFormat(path string) (Format, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return FormatUnknown, err
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	// Try ELF
 	if _, err := elf.NewFile(file); err == nil {
@@ -41,7 +50,9 @@ func DetectFormat(path string) (BinaryFormat, error) {
 	}
 
 	// Reset file pointer
-	file.Seek(0, 0)
+	if _, err := file.Seek(0, 0); err != nil {
+		return FormatUnknown, fmt.Errorf("failed to seek: %w", err)
+	}
 
 	// Try PE
 	if _, err := pe.NewFile(file); err == nil {
@@ -49,7 +60,9 @@ func DetectFormat(path string) (BinaryFormat, error) {
 	}
 
 	// Reset file pointer
-	file.Seek(0, 0)
+	if _, err := file.Seek(0, 0); err != nil {
+		return FormatUnknown, fmt.Errorf("failed to seek: %w", err)
+	}
 
 	// Try Mach-O
 	if _, err := macho.NewFile(file); err == nil {
@@ -66,7 +79,9 @@ func ParseELF(path string) ([]Section, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	elfFile, err := elf.NewFile(file)
 	if err != nil {
@@ -77,8 +92,8 @@ func ParseELF(path string) ([]Section, error) {
 
 	// Data section names to extract
 	dataSectionNames := []string{
-		".data",      // Initialized data
-		".rodata",    // Read-only data
+		".data",        // Initialized data
+		".rodata",      // Read-only data
 		".data.rel.ro", // Read-only after relocation
 	}
 
@@ -110,7 +125,9 @@ func ParsePE(path string) ([]Section, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	peFile, err := pe.NewFile(file)
 	if err != nil {
@@ -146,7 +163,9 @@ func ParseMachO(path string) ([]Section, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	machoFile, err := macho.NewFile(file)
 	if err != nil {
@@ -157,10 +176,10 @@ func ParseMachO(path string) ([]Section, error) {
 
 	// Data section patterns to extract
 	dataPatterns := map[string]bool{
-		"__DATA.__data":       true, // Initialized data
-		"__DATA.__const":      true, // Constant data
-		"__TEXT.__cstring":    true, // C strings
-		"__TEXT.__const":      true, // Constants in text
+		"__DATA.__data":    true, // Initialized data
+		"__DATA.__const":   true, // Constant data
+		"__TEXT.__cstring": true, // C strings
+		"__TEXT.__const":   true, // Constants in text
 	}
 
 	for _, sect := range machoFile.Sections {
@@ -186,7 +205,7 @@ func ParseMachO(path string) ([]Section, error) {
 }
 
 // ParseBinary parses a binary file based on the specified format
-func ParseBinary(path string, format BinaryFormat) ([]Section, error) {
+func ParseBinary(path string, format Format) ([]Section, error) {
 	switch format {
 	case FormatELF:
 		return ParseELF(path)

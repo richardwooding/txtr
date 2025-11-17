@@ -1,0 +1,35 @@
+version: "2"
+
+linters-settings:
+  govet:
+    check-shadowing: true
+  gofmt:
+    simplify: true
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+
+linters:
+  disable-all: true
+  enable:
+    - govet
+    - staticcheck
+    - errcheck
+    - ineffassign
+    - unused
+    - misspell
+    - revive
+
+formatters:
+  enable:
+    - gofmt
+
+run:
+  go: '1.25'
+  timeout: 5m
+  tests: true
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0

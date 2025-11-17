@@ -77,7 +77,7 @@ func TestExtractStrings(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Collect strings using a custom print function
 			var found []string
-			printFunc := func(str []byte, filename string, offset int64, config Config) {
+			printFunc := func(str []byte, _ string, _ int64, _ Config) {
 				found = append(found, string(str))
 			}
 

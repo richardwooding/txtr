@@ -1,3 +1,5 @@
+// Package main implements txtr, a GNU strings compatible utility for extracting
+// printable strings from binary files.
 package main
 
 import (
@@ -14,19 +16,20 @@ const version = "2.0.0"
 
 // CLI defines the command-line interface structure
 type CLI struct {
-	MinLength              int      `short:"n" name:"bytes" default:"4" help:"Minimum string length"`
-	PrintFileName          bool     `short:"f" name:"print-file-name" help:"Print file name before each string"`
-	Radix                  string   `short:"t" name:"radix" enum:"o,d,x," default:"" help:"Print offset in radix (o=octal, d=decimal, x=hex)"`
-	OctalOffset            bool     `short:"o" help:"Print offset in octal (alias for -t o)"`
-	Encoding               string   `short:"e" name:"encoding" enum:"s,S,b,l,B,L," default:"s" help:"Character encoding (s=7-bit, S=8-bit, b=16-bit BE, l=16-bit LE, B=32-bit BE, L=32-bit LE)"`
-	Unicode                string   `short:"U" name:"unicode" enum:"default,invalid,locale,escape,hex,highlight," default:"default" help:"How to handle UTF-8 sequences (default/invalid/locale/escape/hex/highlight)"`
-	OutputSeparator        string   `short:"s" name:"output-separator" default:"\\n" help:"Output record separator (default: newline)"`
-	IncludeAllWhitespace   bool     `short:"w" name:"include-all-whitespace" help:"Include all whitespace characters in strings"`
-	ScanAll                bool     `short:"a" name:"all" help:"Scan entire file"`
-	ScanDataOnly           bool     `short:"d" name:"data" help:"Scan only initialized data sections of binary files"`
-	TargetFormat           string   `short:"T" name:"target" enum:"elf,pe,macho,binary," default:"" help:"Specify binary format (elf/pe/macho/binary)"`
-	Version                bool     `short:"v" short:"V" name:"version" help:"Display version information"`
-	Files                  []string `arg:"" optional:"" name:"file" help:"Files to extract strings from" type:"path"`
+	MinLength            int      `short:"n" name:"bytes" default:"4" help:"Minimum string length"`
+	PrintFileName        bool     `short:"f" name:"print-file-name" help:"Print file name before each string"`
+	Radix                string   `short:"t" name:"radix" enum:"o,d,x," default:"" help:"Print offset in radix (o=octal, d=decimal, x=hex)"`
+	OctalOffset          bool     `short:"o" help:"Print offset in octal (alias for -t o)"`
+	Encoding             string   `short:"e" name:"encoding" enum:"s,S,b,l,B,L," default:"s" help:"Character encoding (s=7-bit, S=8-bit, b=16-bit BE, l=16-bit LE, B=32-bit BE, L=32-bit LE)"`
+	Unicode              string   `short:"U" name:"unicode" enum:"default,invalid,locale,escape,hex,highlight," default:"default" help:"How to handle UTF-8 sequences (default/invalid/locale/escape/hex/highlight)"`
+	OutputSeparator      string   `short:"s" name:"output-separator" default:"\\n" help:"Output record separator (default: newline)"`
+	IncludeAllWhitespace bool     `short:"w" name:"include-all-whitespace" help:"Include all whitespace characters in strings"`
+	ScanAll              bool     `short:"a" name:"all" help:"Scan entire file"`
+	ScanDataOnly         bool     `short:"d" name:"data" help:"Scan only initialized data sections of binary files"`
+	TargetFormat         string   `short:"T" name:"target" enum:"elf,pe,macho,binary," default:"" help:"Specify binary format (elf/pe/macho/binary)"`
+	Version              bool     `short:"v" name:"version" help:"Display version information"`
+	VersionAlt           bool     `short:"V" hidden:"" help:"Display version information (alias)"`
+	Files                []string `arg:"" optional:"" name:"file" help:"Files to extract strings from" type:"path"`
 }
 
 func main() {
@@ -39,7 +42,7 @@ func main() {
 	)
 
 	// Handle version flag
-	if cli.Version {
+	if cli.Version || cli.VersionAlt {
 		fmt.Printf("txtr %s\n", version)
 		fmt.Println("GNU strings compatible utility written in Go")
 		os.Exit(0)
@@ -52,11 +55,12 @@ func main() {
 
 	// Process output separator escape sequences
 	outputSep := cli.OutputSeparator
-	if outputSep == "\\n" {
+	switch outputSep {
+	case "\\n":
 		outputSep = "\n"
-	} else if outputSep == "\\t" {
+	case "\\t":
 		outputSep = "\t"
-	} else if outputSep == "\\r" {
+	case "\\r":
 		outputSep = "\r"
 	}
 
@@ -99,7 +103,9 @@ func main() {
 					continue
 				}
 				extractor.ExtractStrings(file, filename, config, printer.PrintString)
-				file.Close()
+				if err := file.Close(); err != nil {
+					fmt.Fprintf(os.Stderr, "strings: %s: error closing file: %v\n", filename, err)
+				}
 			}
 		}
 	}
@@ -108,7 +114,7 @@ func main() {
 // processFileWithBinaryParsing handles binary format detection and section extraction
 func processFileWithBinaryParsing(filename string, config extractor.Config) {
 	// Determine format
-	var format binary.BinaryFormat
+	var format binary.Format
 	var err error
 
 	if config.TargetFormat != "" && config.TargetFormat != "binary" {
@@ -144,7 +150,11 @@ func processFileWithBinaryParsing(filename string, config extractor.Config) {
 			fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
 			return
 		}
-		defer file.Close()
+		defer func() {
+			if err := file.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "strings: %s: error closing file: %v\n", filename, err)
+			}
+		}()
 
 		extractor.ExtractStrings(file, filename, config, printer.PrintString)
 		return
@@ -157,7 +167,11 @@ func processFileWithBinaryParsing(filename string, config extractor.Config) {
 			fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
 			return
 		}
-		defer file.Close()
+		defer func() {
+			if err := file.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "strings: %s: error closing file: %v\n", filename, err)
+			}
+		}()
 
 		extractor.ExtractStrings(file, filename, config, printer.PrintString)
 		return

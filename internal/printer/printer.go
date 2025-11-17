@@ -1,3 +1,5 @@
+// Package printer provides functions for formatting and printing extracted strings
+// with optional filename and offset prefixes.
 package printer
 
 import (
