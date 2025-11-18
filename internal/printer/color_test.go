@@ -47,21 +47,9 @@ func TestShouldUseColor(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Save and restore NO_COLOR
-			oldNoColor := os.Getenv("NO_COLOR")
-			defer func() {
-				if oldNoColor == "" {
-					_ = os.Unsetenv("NO_COLOR")
-				} else {
-					_ = os.Setenv("NO_COLOR", oldNoColor)
-				}
-			}()
-
-			// Set NO_COLOR for this test
+			// Set NO_COLOR for this test using t.Setenv, which handles cleanup and prevents parallel execution
 			if tt.noColorEnv != "" {
-				_ = os.Setenv("NO_COLOR", tt.noColorEnv)
-			} else {
-				_ = os.Unsetenv("NO_COLOR")
+				t.Setenv("NO_COLOR", tt.noColorEnv)
 			}
 
 			got := ShouldUseColor(tt.mode)
@@ -69,8 +57,7 @@ func TestShouldUseColor(t *testing.T) {
 			// For ColorAuto, we can't reliably test TTY detection in unit tests,
 			// so we only verify NO_COLOR behavior
 			if tt.mode == extractor.ColorAuto && tt.noColorEnv == "" {
-				// Skip verification when testing TTY detection
-				return
+				t.Skip("TTY detection not testable in unit tests")
 			}
 
 			if got != tt.expected {

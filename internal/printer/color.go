@@ -60,7 +60,6 @@ func isTerminal(f *os.File) bool {
 	}
 
 	// Check if it's a character device (mode & ModeCharDevice != 0)
-	// This works on Unix-like systems
 	mode := fi.Mode()
 	return (mode & os.ModeCharDevice) != 0
 }
