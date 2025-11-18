@@ -322,6 +322,13 @@ The `--json` flag outputs results in structured JSON format, perfect for automat
   - `0`: Auto-detect number of CPUs (default, enables automatic parallelism)
   - `1`: Sequential processing (disables parallelism)
   - `N`: Use N parallel workers
+- `--mmap-threshold=<bytes>`: Minimum file size for memory-mapped I/O (default: 1MB / 1048576 bytes)
+  - Files >= threshold use mmap for 2x performance boost
+  - Files < threshold use buffered I/O
+  - Tunable for different workloads and hardware
+- `--no-mmap`: Disable memory-mapped I/O optimization
+  - Forces buffered I/O for all files
+  - Useful for testing or compatibility
 
 ### Scan Options
 - `-a`, `--all`: Scan entire file (default behavior)
@@ -343,6 +350,7 @@ The `--json` flag outputs results in structured JSON format, perfect for automat
 - **Regex Pattern Filtering**: Extract specific patterns (URLs, emails, IPs) or exclude unwanted strings (debug symbols, noise)
 - **Statistics Mode**: Aggregated analysis with encoding distribution, length buckets, and longest strings for quick triage
 - **Colored Output**: Visual distinction with ANSI colors for filenames, offsets, and string types (auto/always/never)
+- **Memory-Mapped I/O**: Automatic 2x performance boost for files ≥1MB via mmap optimization
 - **Configurable Minimum Length**: Set minimum string length threshold
 - **Multiple File Processing**: Process multiple files in one command with per-file or aggregated statistics
 - **Parallel Processing**: Automatic multi-core utilization for 2-8x speedup on multiple files
