@@ -46,6 +46,8 @@ type CLI struct {
 	IgnoreCase           bool     `short:"i" name:"ignore-case" help:"Case-insensitive pattern matching"`
 	Stats                bool     `name:"stats" help:"Output statistics summary instead of strings"`
 	StatsPerFile         bool     `name:"stats-per-file" help:"Show per-file statistics instead of aggregated (requires --stats)"`
+	DisableMmap          bool     `name:"no-mmap" help:"Disable memory-mapped I/O optimization"`
+	MmapThreshold        int64    `name:"mmap-threshold" default:"1048576" help:"Minimum file size (bytes) for using mmap (default: 1MB)"`
 	Version              bool     `short:"v" name:"version" help:"Display version information"`
 	VersionAlt           bool     `short:"V" hidden:"" help:"Display version information (alias)"`
 	Files                []string `arg:"" optional:"" name:"file" help:"Files to extract strings from" type:"path"`
@@ -180,6 +182,8 @@ func main() {
 		ColorMode:            colorMode,
 		MatchPatterns:        matchPatterns,
 		ExcludePatterns:      excludePatterns,
+		DisableMmap:          cli.DisableMmap,
+		MmapThreshold:        cli.MmapThreshold,
 	}
 
 	// Determine number of parallel workers
@@ -208,15 +212,10 @@ func main() {
 				// Parse binary and extract from data sections only
 				processFileWithBinaryParsing(filename, config)
 			} else {
-				// Regular full-file scanning
-				file, err := os.Open(filename)
-				if err != nil {
+				// Regular full-file scanning with automatic mmap optimization
+				if err := extractor.ExtractStringsFromFile(filename, config, printer.PrintString); err != nil {
 					fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
 					continue
-				}
-				extractor.ExtractStrings(file, filename, config, printer.PrintString)
-				if err := file.Close(); err != nil {
-					fmt.Fprintf(os.Stderr, "strings: %s: error closing file: %v\n", filename, err)
 				}
 			}
 		}
@@ -245,20 +244,13 @@ func processWithJSON(files []string, workers int, config extractor.Config) {
 				// Parse binary and extract from data sections
 				processFileWithBinaryParsingJSON(filename, config, jsonPrinter)
 			} else {
-				// Regular full-file scanning
-				file, err := os.Open(filename)
-				if err != nil {
+				// Regular full-file scanning with automatic mmap optimization
+				jsonPrinter.SetFileInfo(filename, "", nil)
+				if err := extractor.ExtractStringsFromFile(filename, config, jsonPrinter.PrintString); err != nil {
 					fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
 					// Add error result to JSON
 					jsonPrinter.AddFileResult(filename, "", nil, nil, err)
 					continue
-				}
-
-				jsonPrinter.SetFileInfo(filename, "", nil)
-				extractor.ExtractStrings(file, filename, config, jsonPrinter.PrintString)
-
-				if err := file.Close(); err != nil {
-					fmt.Fprintf(os.Stderr, "strings: %s: error closing file: %v\n", filename, err)
 				}
 			}
 		}
@@ -451,15 +443,8 @@ func processFilesParallel(filenames []string, workers int, config extractor.Conf
 				if config.ScanDataOnly {
 					err = processFileWithBinaryParsingToWriter(&buf, j.filename, config)
 				} else {
-					file, openErr := os.Open(j.filename)
-					if openErr != nil {
-						results <- result{index: j.index, output: "", err: openErr}
-						continue
-					}
-					extractor.ExtractStrings(file, j.filename, config, printFunc)
-					if closeErr := file.Close(); closeErr != nil {
-						fmt.Fprintf(os.Stderr, "strings: %s: error closing file: %v\n", j.filename, closeErr)
-					}
+					// Use ExtractStringsFromFile with automatic mmap optimization
+					err = extractor.ExtractStringsFromFile(j.filename, config, printFunc)
 				}
 
 				// Send result
@@ -594,22 +579,16 @@ func processFilesParallelJSON(filenames []string, workers int, config extractor.
 					// Process with binary parsing
 					format, sections, strings, err = processFileForJSON(j.filename, config)
 				} else {
-					// Regular full-file scanning
-					file, openErr := os.Open(j.filename)
-					if openErr != nil {
+					// Regular full-file scanning with automatic mmap optimization
+					tempPrinter.SetFileInfo(j.filename, "", nil)
+					err = extractor.ExtractStringsFromFile(j.filename, config, tempPrinter.PrintString)
+					if err != nil {
 						results <- jsonFileResult{
 							index:    j.index,
 							filename: j.filename,
-							err:      openErr,
+							err:      err,
 						}
 						continue
-					}
-
-					tempPrinter.SetFileInfo(j.filename, "", nil)
-					extractor.ExtractStrings(file, j.filename, config, tempPrinter.PrintString)
-
-					if closeErr := file.Close(); closeErr != nil {
-						fmt.Fprintf(os.Stderr, "strings: %s: error closing file: %v\n", j.filename, closeErr)
 					}
 
 					// Get the strings from tempPrinter
@@ -805,17 +784,11 @@ func processWithStats(files []string, workers int, config extractor.Config, perF
 					continue
 				}
 			} else {
-				file, err := os.Open(filename)
-				if err != nil {
+				// Use ExtractStringsFromFile with automatic mmap optimization
+				s.SetFileInfo(filename, "", nil)
+				if err := extractor.ExtractStringsFromFile(filename, config, collectFunc); err != nil {
 					fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
 					continue
-				}
-
-				s.SetFileInfo(filename, "", nil)
-				extractor.ExtractStrings(file, filename, config, collectFunc)
-
-				if err := file.Close(); err != nil {
-					fmt.Fprintf(os.Stderr, "strings: %s: error closing file: %v\n", filename, err)
 				}
 			}
 
@@ -846,16 +819,10 @@ func processWithStats(files []string, workers int, config extractor.Config, perF
 					continue
 				}
 			} else {
-				file, err := os.Open(filename)
-				if err != nil {
+				// Use ExtractStringsFromFile with automatic mmap optimization
+				if err := extractor.ExtractStringsFromFile(filename, config, collectFunc); err != nil {
 					fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
 					continue
-				}
-
-				extractor.ExtractStrings(file, filename, config, collectFunc)
-
-				if err := file.Close(); err != nil {
-					fmt.Fprintf(os.Stderr, "strings: %s: error closing file: %v\n", filename, err)
 				}
 			}
 		}
@@ -886,17 +853,11 @@ func processWithStats(files []string, workers int, config extractor.Config, perF
 							continue
 						}
 					} else {
-						file, err := os.Open(j.filename)
-						if err != nil {
+						// Use ExtractStringsFromFile with automatic mmap optimization
+						if err := extractor.ExtractStringsFromFile(j.filename, config, localCollectFunc); err != nil {
 							fmt.Fprintf(os.Stderr, "strings: %s: %v\n", j.filename, err)
 							results <- nil
 							continue
-						}
-
-						extractor.ExtractStrings(file, j.filename, config, localCollectFunc)
-
-						if err := file.Close(); err != nil {
-							fmt.Fprintf(os.Stderr, "strings: %s: error closing file: %v\n", j.filename, err)
 						}
 					}
 

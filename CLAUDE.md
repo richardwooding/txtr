@@ -779,7 +779,8 @@ Kong struct tags define flags with types, defaults, enums, and help text. Specia
 ### Dependencies
 
 **Runtime:**
-- **Kong v1.7.0** (`github.com/alecthomas/kong`): Command-line parser (only external dependency)
+- **Kong v1.7.0** (`github.com/alecthomas/kong`): Command-line parser
+- **golang.org/x/exp/mmap**: Memory-mapped I/O for performance optimization
 - Go 1.25 standard library
 
 **Development/Build:**
@@ -1169,6 +1170,71 @@ txtr -P 1 -f *.bin
 txtr -P 8 -f -t x --color=always *.exe
 ```
 
+## Memory-Mapped I/O Optimization
+
+The project uses memory-mapped I/O (mmap) for large files to achieve 2-3x performance improvement over buffered I/O.
+
+### Architecture
+
+**Implementation**: `internal/extractor/mmap.go`
+
+**Key Components:**
+- `ExtractStringsFromFile(path, config, printFunc)` - High-level wrapper that chooses I/O strategy
+- `shouldUseMmap(path, config)` - Decision logic based on file size and configuration
+- `extractStringsWithMmap(path, config, printFunc)` - mmap-optimized extraction
+- `extractUTF8AwareFromBytes()` - Helper for UTF-8 mode with mmap
+
+**Decision Logic:**
+1. Check if `--no-mmap` flag is set (force buffered I/O)
+2. Check if file is regular (not pipe, device, etc.)
+3. Check if file size >= `--mmap-threshold` (default: 1MB)
+4. If mmap criteria met, attempt mmap; fallback to buffered I/O on failure
+
+**How It Works:**
+1. Uses `golang.org/x/exp/mmap` package to map file into memory
+2. Reads entire file into byte slice via `ReadAt()`
+3. Delegates to existing `*FromBytes()` functions for extraction
+4. Automatically falls back to buffered I/O if mmap fails
+
+**Fallback Scenarios:**
+- File is below threshold size
+- File is stdin or pipe (cannot mmap)
+- mmap() system call fails (permissions, OS limits)
+- `--no-mmap` flag is set
+
+**Integration Points:**
+- Sequential processing: `main.go:216` - Direct call to `ExtractStringsFromFile()`
+- Parallel processing: `main.go:447` - Per-worker call to `ExtractStringsFromFile()`
+- JSON mode: `main.go:249, 584` - Both sequential and parallel
+- Stats mode: `main.go:789, 829, 863` - All three modes (per-file, aggregated, parallel)
+
+**Configuration:**
+- `Config.DisableMmap bool` - Disable optimization (from `--no-mmap`)
+- `Config.MmapThreshold int64` - Minimum file size in bytes (from `--mmap-threshold`)
+
+**Performance:**
+- 1MB files: **2.08x faster** (2.6ms → 1.3ms)
+- 10MB files: **2.15x faster** (26.5ms → 12.3ms)
+- 100MB files: **2.05x faster** (267ms → 130ms)
+- UTF-16: **2.29x faster** + 6x fewer allocations
+
+**Testing:**
+- Unit tests: `internal/extractor/mmap_test.go` (9 test functions)
+  - `TestShouldUseMmap` - Threshold logic
+  - `TestExtractStringsFromFile` - Integration
+  - `TestMmapEquivalence` - Output consistency with buffered I/O
+  - `TestMmapFallback` - Error handling
+  - Encoding-specific tests (UTF-16, UTF-32)
+- Benchmarks: `internal/extractor/mmap_benchmark_test.go` (14 benchmarks)
+  - Compares mmap vs buffered I/O across file sizes (1MB, 10MB, 100MB)
+  - Tests all encodings (ASCII, UTF-16, UTF-32)
+
+**Transparency:**
+- No user-visible behavior changes (same output format)
+- Automatic optimization (no user configuration required)
+- CLI flags for control and testing (`--no-mmap`, `--mmap-threshold`)
+- Works with all features (parallel, JSON, stats, binary parsing)
+
 ## Code Patterns
 
 - Standard Go Project Layout for clear code organization
@@ -1177,3 +1243,4 @@ txtr -P 8 -f -t x --color=always *.exe
 - Package separation: CLI, extraction logic, and output formatting are independent
 - Collector pattern: JSONPrinter buffers results before output for structured format
 - Worker pool pattern: Parallel file processing with ordered output and per-file error handling
+- Dual I/O path: Automatic mmap optimization with buffered I/O fallback for transparency

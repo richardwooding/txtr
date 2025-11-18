@@ -9,7 +9,10 @@
 *.dylib
 
 # Built binary
-txtr
+/txtr
+
+# GoReleaser output
+dist/
 
 # Test binary, built with `go test -c`
 *.test

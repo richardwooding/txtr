@@ -41,6 +41,8 @@ type Config struct {
 	ColorMode            ColorMode        // When to use colored output
 	MatchPatterns        []*regexp.Regexp // Patterns to match (include filter)
 	ExcludePatterns      []*regexp.Regexp // Patterns to exclude (blacklist filter)
+	DisableMmap          bool             // Disable memory-mapped I/O optimization
+	MmapThreshold        int64            // Minimum file size (bytes) for using mmap
 }
 
 // ExtractStrings reads from reader and extracts printable strings
