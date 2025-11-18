@@ -953,9 +953,10 @@ The `-P/--parallel` flag enables concurrent file processing using a worker pool 
 - Exit code reflects overall success
 
 **JSON mode:**
-- Currently processes files sequentially
-- TODO: Enhance JSONPrinter for multi-file parallel support
-- Parallelism mainly benefits plain text output
+- Supports parallel processing for multiple files
+- Uses `processFilesParallelJSON()` for concurrent extraction
+- Results collected and ordered before final JSON output
+- Failed files included in output with error field and empty strings array
 
 ### Performance
 

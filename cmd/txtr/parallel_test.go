@@ -47,7 +47,10 @@ func TestParallelProcessingOrder(t *testing.T) {
 	// Capture output
 	var buf bytes.Buffer
 	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Failed to create pipe: %v", err)
+	}
 	os.Stdout = w
 
 	// Run parallel processing
@@ -102,7 +105,10 @@ func TestParallelProcessingErrorHandling(t *testing.T) {
 
 	// Capture stderr
 	oldStderr := os.Stderr
-	r, w, _ := os.Pipe()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Failed to create pipe: %v", err)
+	}
 	os.Stderr = w
 
 	// Run parallel processing
@@ -156,7 +162,10 @@ func TestSequentialVsParallel(t *testing.T) {
 	// Run sequential processing
 	var seqBuf bytes.Buffer
 	for _, filename := range filePaths {
-		file, _ := os.Open(filename)
+		file, err := os.Open(filename)
+		if err != nil {
+			t.Fatalf("Failed to open file %s: %v", filename, err)
+		}
 		extractor.ExtractStrings(file, filename, config, func(str []byte, fname string, _ int64, cfg extractor.Config) {
 			if cfg.PrintFileName && fname != "" {
 				seqBuf.WriteString(fname + ": ")
@@ -172,7 +181,10 @@ func TestSequentialVsParallel(t *testing.T) {
 	// Run parallel processing
 	var parBuf bytes.Buffer
 	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Failed to create pipe: %v", err)
+	}
 	os.Stdout = w
 
 	processFilesParallel(filePaths, 2, config)
