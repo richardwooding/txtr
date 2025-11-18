@@ -295,14 +295,28 @@ func FuzzExtractUTF32(f *testing.F) {
 		config := Config{MinLength: minLen}
 		reader := bytes.NewReader(data)
 
-		// Should not panic
-		defer func() {
-			if r := recover(); r != nil {
-				t.Fatalf("Panic: %v\nInput: %q\nLE: %v", r, data, littleEndian)
-			}
+		// Add timeout (1 second per input) to avoid infinite/hanging test
+		done := make(chan bool, 1)
+		var panicked interface{}
+
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					panicked = r
+				}
+				done <- true
+			}()
+			extractUTF32(reader, "", config, printFunc, byteOrder)
 		}()
 
-		extractUTF32(reader, "", config, printFunc, byteOrder)
+		select {
+		case <-done:
+			if panicked != nil {
+				t.Fatalf("Panic: %v\nInput: %q\nLE: %v", panicked, data, littleEndian)
+			}
+		case <-time.After(1 * time.Second):
+			t.Fatalf("Timeout (possible infinite loop)\nInput: %q\nLE: %v", data, littleEndian)
+		}
 
 		// Invariant: All outputs are valid UTF-8
 		for i, result := range results {

@@ -34,6 +34,7 @@ type CLI struct {
 	ScanDataOnly         bool     `short:"d" name:"data" help:"Scan only initialized data sections of binary files"`
 	TargetFormat         string   `short:"T" name:"target" enum:"elf,pe,macho,binary," default:"" help:"Specify binary format (elf/pe/macho/binary)"`
 	JSON                 bool     `short:"j" name:"json" help:"Output results in JSON format for automation"`
+	Color                string   `name:"color" enum:"auto,always,never," default:"auto" help:"When to use colored output (auto/always/never)"`
 	Version              bool     `short:"v" name:"version" help:"Display version information"`
 	VersionAlt           bool     `short:"V" hidden:"" help:"Display version information (alias)"`
 	Files                []string `arg:"" optional:"" name:"file" help:"Files to extract strings from" type:"path"`
@@ -86,6 +87,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Parse color mode
+	var colorMode extractor.ColorMode
+	switch cli.Color {
+	case "always":
+		colorMode = extractor.ColorAlways
+	case "never":
+		colorMode = extractor.ColorNever
+	default: // "auto" or empty
+		colorMode = extractor.ColorAuto
+	}
+
 	// Build config from CLI args
 	config := extractor.Config{
 		MinLength:            cli.MinLength,
@@ -99,6 +111,7 @@ func main() {
 		ScanAll:              cli.ScanAll,
 		ScanDataOnly:         cli.ScanDataOnly,
 		TargetFormat:         cli.TargetFormat,
+		ColorMode:            colorMode,
 	}
 
 	// Process files or stdin

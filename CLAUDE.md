@@ -458,6 +458,8 @@ txtr/
 │   └── printer/        # Output formatting logic
 │       ├── printer.go
 │       ├── printer_test.go
+│       ├── color.go         # Color detection and ANSI codes
+│       ├── color_test.go
 │       ├── json.go          # JSON output format
 │       └── json_test.go
 ├── testdata/           # Test data and fuzz corpus
@@ -486,7 +488,8 @@ txtr/
 - Backward compatible with original GNU strings flags
 
 **internal/extractor/extractor.go** - Core extraction logic:
-- `Config` struct: Configuration for extraction options (MinLength, PrintFileName, Radix, PrintOffset, Encoding, Unicode, OutputSeparator, IncludeAllWhitespace, ScanAll)
+- `ColorMode` type: Enum for color output mode (Auto/Always/Never)
+- `Config` struct: Configuration for extraction options (MinLength, PrintFileName, Radix, PrintOffset, Encoding, Unicode, OutputSeparator, IncludeAllWhitespace, ScanAll, ColorMode)
 - `ExtractStrings()`: Router function that dispatches to encoding-specific extractors
 - `extractASCII()`: Extracts 7-bit or 8-bit ASCII strings (delegates to UTF-8 aware version if Unicode mode set)
 - `extractUTF8Aware()`: UTF-8 aware extraction with multibyte sequence validation and special display modes
@@ -497,7 +500,14 @@ txtr/
 - `isPrintableRune()`: Checks if a Unicode rune is printable
 
 **internal/printer/printer.go** - Output formatting:
-- `PrintString()`: Formats and outputs strings with optional filename prefix, offset, and custom separator
+- `PrintString()`: Formats and outputs strings with optional filename prefix, offset, custom separator, and colors
+
+**internal/printer/color.go** - Color detection and ANSI codes:
+- `ColorMode`: Type definition (Auto/Always/Never) moved to extractor.Config to avoid circular imports
+- `ShouldUseColor()`: Determines if colors should be used based on mode, NO_COLOR env var, and TTY detection
+- `isTerminal()`: Checks if output is a TTY using os.ModeCharDevice (cross-platform)
+- ANSI color code constants: Cyan, Yellow, Green, Magenta, Dim, Bold, Reset
+- `ColorString()`: Wraps strings with ANSI color codes when enabled
 
 **internal/printer/json.go** - JSON output formatting:
 - `JSONPrinter`: Collects strings and outputs in structured JSON format
@@ -562,6 +572,13 @@ Tests are organized by package:
 
 **internal/printer/printer_test.go**:
 - `TestPrintString`: Output formatting tests (currently skipped - requires stdout capture)
+
+**internal/printer/color_test.go**:
+- `TestShouldUseColor`: Color mode behavior and NO_COLOR environment variable
+- `TestColorString`: ANSI code wrapping logic
+- `TestIsTerminal`: TTY detection with nil and regular files
+- `TestColorModeConstants`: ColorMode enum value validation
+- `TestANSIColorCodes`: ANSI code constant verification
 
 **internal/printer/json_test.go**:
 - `TestJSONPrinter`: Tests basic JSON output with various configurations
@@ -675,6 +692,7 @@ The application uses Kong for declarative CLI argument parsing:
 - `-s` / `--output-separator`: Custom output record separator
 - `-w` / `--include-all-whitespace`: Include newlines/tabs in strings
 - `-j` / `--json`: Output results in JSON format for automation
+- `--color`: When to use colored output (auto/always/never, default: auto)
 
 **Utility Flags:**
 - `-a` / `--all`: Scan entire file (always enabled)
@@ -777,6 +795,103 @@ txtr --json -d binary.exe | jq '.files[0].sections[]'
 - `l` → `utf-16le`
 - `B` → `utf-32be`
 - `L` → `utf-32le`
+
+## Colored Output
+
+The `--color` flag enables ANSI colored output for improved terminal readability.
+
+### Color Modes
+
+- **`auto`** (default): Automatically detects if stdout is a TTY
+  - Enables colors when output is to a terminal
+  - Disables colors when piped or redirected
+  - Respects `NO_COLOR` environment variable
+
+- **`always`**: Forces colored output regardless of TTY detection
+  - Useful for piping to `less -R` or similar pagers
+  - Still respects `NO_COLOR` environment variable
+
+- **`never`**: Disables colored output completely
+
+### Color Scheme
+
+| Element | Color | ANSI Code | Applied To |
+|---------|-------|-----------|------------|
+| Filename | Bold Cyan | `\x1b[1m\x1b[36m` | When `-f` flag used |
+| Offset | Yellow | `\x1b[33m` | When `-t` flag used |
+| 7-bit ASCII | Default | None | Standard ASCII strings |
+| 8-bit ASCII | Magenta | `\x1b[35m` | High-byte strings (`-e S`) |
+| UTF-8/UTF-16/UTF-32 | Green | `\x1b[32m` | Unicode strings |
+| Custom separator | Dim | `\x1b[2m` | Non-newline separators (`-s`) |
+
+### Implementation
+
+**Color Detection (`internal/printer/color.go`):**
+1. `ShouldUseColor()` checks three conditions in order:
+   - NO_COLOR environment variable (https://no-color.org/) - overrides everything
+   - ColorMode setting (never/always/auto)
+   - TTY detection via `isTerminal()` (only for auto mode)
+
+2. `isTerminal()` uses `os.ModeCharDevice`:
+   - Cross-platform (works on Unix, Linux, macOS, Windows)
+   - Checks if file mode has ModeCharDevice bit set
+   - Returns false for pipes, redirects, and regular files
+
+3. `ColorString()` wraps text with ANSI codes:
+   - Only when colors are enabled
+   - Automatically adds reset code at the end
+   - No-op when colors are disabled or string is empty
+
+**Color Application (`internal/printer/printer.go`):**
+- `PrintString()` applies colors conditionally based on `config.ColorMode`
+- Colors are encoding-aware:
+  - Detects 8-bit ASCII via `config.Encoding == "S"`
+  - Detects UTF-8 mode via `config.Unicode` setting
+  - Detects UTF-16/UTF-32 via encoding flags
+- Filename and offset always get their respective colors when present
+- Custom separators are dimmed if not newline
+
+### Usage Examples
+
+```bash
+# Auto-detect terminal (default)
+txtr file.bin
+txtr --color=auto file.bin
+
+# Force colors for piping to pager
+txtr --color=always file.bin | less -R
+
+# Disable colors
+txtr --color=never file.bin
+
+# Respect NO_COLOR environment variable
+NO_COLOR=1 txtr file.bin
+
+# Colored output with all metadata
+txtr -f -t x --color=always file.bin
+```
+
+### Testing
+
+**Color Tests (`internal/printer/color_test.go`):**
+- `TestShouldUseColor`: Tests all three color modes and NO_COLOR behavior
+  - Uses `t.Setenv()` for safe environment variable manipulation
+  - Prevents race conditions in parallel test execution
+  - Skips TTY detection test with `t.Skip()` (not reliably testable)
+
+- `TestColorString`: Verifies ANSI code wrapping logic
+- `TestIsTerminal`: Tests TTY detection with nil and regular files
+- `TestColorModeConstants`: Validates ColorMode enum values
+- `TestANSIColorCodes`: Ensures ANSI codes are correct
+
+**Key Testing Practices:**
+- Use `t.Setenv()` instead of manual `os.Setenv/Unsetenv`
+  - Automatic cleanup after test
+  - Prevents parallel execution when env vars are modified
+  - Cleaner and safer code
+- Use `t.Skip()` for untestable scenarios (like TTY detection)
+  - Makes test output clearer
+  - Documents why certain cases aren't fully tested
 
 ## Code Patterns
 

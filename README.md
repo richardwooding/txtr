@@ -136,6 +136,18 @@ txtr --json file.bin | jq '.files[0].strings[] | select(.length > 20)'
 
 # JSON output with binary format detection
 txtr --json -d binary.exe | jq '.files[0].format'
+
+# Colored output (auto-detects terminal)
+txtr --color=auto file.bin
+
+# Force colored output (e.g., for piping to 'less -R')
+txtr --color=always file.bin | less -R
+
+# Disable colors
+txtr --color=never file.bin
+
+# Colors with filename and offset
+txtr -f -t x --color=always file.bin
 ```
 
 ### JSON Output Format
@@ -204,6 +216,10 @@ The `--json` flag outputs results in structured JSON format, perfect for automat
 - `-s <sep>`, `--output-separator=<sep>`: Custom output record separator (default: newline)
 - `-w`, `--include-all-whitespace`: Treat all whitespace characters as valid string components
 - `-j`, `--json`: Output results in JSON format for automation and tool integration
+- `--color=<mode>`: When to use colored output (default: auto)
+  - `auto`: Automatically detect if output is a terminal (respects NO_COLOR)
+  - `always`: Force colored output
+  - `never`: Disable colored output
 
 ### Scan Options
 - `-a`, `--all`: Scan entire file (default behavior)
@@ -222,6 +238,7 @@ The `--json` flag outputs results in structured JSON format, perfect for automat
 
 - **Multi-Encoding Support**: Extract strings in 7-bit ASCII, 8-bit ASCII, UTF-16 (BE/LE), and UTF-32 (BE/LE)
 - **UTF-8 Unicode Support**: Full UTF-8 multibyte character handling with multiple display modes
+- **Colored Output**: Visual distinction with ANSI colors for filenames, offsets, and string types (auto/always/never)
 - **Configurable Minimum Length**: Set minimum string length threshold
 - **Multiple File Processing**: Process multiple files in one command
 - **Stdin Support**: Read from standard input for pipeline integration
