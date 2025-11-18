@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"regexp"
 	"runtime"
 	"sync"
 
@@ -39,6 +40,9 @@ type CLI struct {
 	JSON                 bool     `short:"j" name:"json" help:"Output results in JSON format for automation"`
 	Color                string   `name:"color" enum:"auto,always,never," default:"auto" help:"When to use colored output (auto/always/never)"`
 	Parallel             int      `short:"P" name:"parallel" default:"0" help:"Number of parallel workers (0=auto-detect CPUs, 1=sequential)"`
+	MatchPatterns        []string `short:"m" name:"match" help:"Only show strings matching pattern (can be specified multiple times)"`
+	ExcludePatterns      []string `short:"M" name:"exclude" help:"Exclude strings matching pattern (can be specified multiple times)"`
+	IgnoreCase           bool     `short:"i" name:"ignore-case" help:"Case-insensitive pattern matching"`
 	Version              bool     `short:"v" name:"version" help:"Display version information"`
 	VersionAlt           bool     `short:"V" hidden:"" help:"Display version information (alias)"`
 	Files                []string `arg:"" optional:"" name:"file" help:"Files to extract strings from" type:"path"`
@@ -125,6 +129,26 @@ func main() {
 		colorMode = extractor.ColorAuto
 	}
 
+	// Compile regex patterns
+	var matchPatterns, excludePatterns []*regexp.Regexp
+	var err error
+
+	if len(cli.MatchPatterns) > 0 {
+		matchPatterns, err = extractor.CompilePatterns(cli.MatchPatterns, cli.IgnoreCase)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: invalid match pattern: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	if len(cli.ExcludePatterns) > 0 {
+		excludePatterns, err = extractor.CompilePatterns(cli.ExcludePatterns, cli.IgnoreCase)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: invalid exclude pattern: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
 	// Build config from CLI args
 	config := extractor.Config{
 		MinLength:            cli.MinLength,
@@ -139,6 +163,8 @@ func main() {
 		ScanDataOnly:         cli.ScanDataOnly,
 		TargetFormat:         cli.TargetFormat,
 		ColorMode:            colorMode,
+		MatchPatterns:        matchPatterns,
+		ExcludePatterns:      excludePatterns,
 	}
 
 	// Determine number of parallel workers

@@ -3,6 +3,7 @@ package extractor
 import (
 	"bytes"
 	"encoding/binary"
+	"regexp"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -338,6 +339,140 @@ func FuzzExtractUTF32(f *testing.F) {
 					t.Errorf("String #%d contains surrogate rune 0x%X", i, r)
 					break
 				}
+			}
+		}
+	})
+}
+
+// FuzzFilterPatterns tests the pattern filtering functionality with random inputs
+func FuzzFilterPatterns(f *testing.F) {
+	// Seed corpus with common use cases
+	f.Add("test@example.com", "\\S+@\\S+", "", false)        // Email pattern
+	f.Add("http://example.com", "https?://\\S+", "", false) // URL pattern
+	f.Add("192.168.1.1", "\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}", "", false) // IP pattern
+	f.Add("ERROR: failed", "(?i)(error|warning|fatal)", "", false) // Error pattern
+	f.Add("debug_symbol", "", "debug.*", false) // Exclude pattern
+	f.Add("test@example.com", "\\S+@\\S+", "spam.*", false) // Match and exclude
+	f.Add("HELLO WORLD", "hello", "", true)  // Case insensitive
+	f.Add("special chars: []{}", "\\[\\]\\{\\}", "", false) // Escaped chars
+	f.Add("unicode: 世界", ".*", "", false) // Unicode
+	f.Add("0xDEADBEEF", "0x[0-9a-fA-F]+", "", false) // Hex pattern
+
+	f.Fuzz(func(t *testing.T, input string, matchPattern string, excludePattern string, ignoreCase bool) {
+		// Timeout protection against ReDoS
+		done := make(chan bool, 1)
+		timeout := false
+		go func() {
+			time.Sleep(1 * time.Second)
+			select {
+			case <-done:
+				return
+			default:
+				timeout = true
+				done <- true
+			}
+		}()
+
+		defer func() {
+			select {
+			case done <- true:
+			default:
+			}
+			if timeout {
+				t.Fatal("Timeout: possible ReDoS attack with patterns")
+			}
+			if r := recover(); r != nil {
+				t.Fatalf("Panic during pattern filtering: %v\nInput: %q\nMatch: %q\nExclude: %q\nIgnoreCase: %v",
+					r, input, matchPattern, excludePattern, ignoreCase)
+			}
+		}()
+
+		// Skip empty patterns (no filtering)
+		if matchPattern == "" && excludePattern == "" {
+			t.Skip("No patterns to test")
+		}
+
+		// Skip extremely long inputs
+		if len(input) > 1*1024*1024 { // 1MB limit
+			t.Skip("Input too large")
+		}
+
+		// Compile patterns (may fail with invalid regex)
+		var matchRegexps, excludeRegexps []*regexp.Regexp
+		var err error
+
+		if matchPattern != "" {
+			matchRegexps, err = CompilePatterns([]string{matchPattern}, ignoreCase)
+			if err != nil {
+				// Invalid pattern is expected in fuzzing, skip
+				t.Skip("Invalid match pattern")
+			}
+		}
+
+		if excludePattern != "" {
+			excludeRegexps, err = CompilePatterns([]string{excludePattern}, ignoreCase)
+			if err != nil {
+				// Invalid pattern is expected in fuzzing, skip
+				t.Skip("Invalid exclude pattern")
+			}
+		}
+
+		config := Config{
+			MatchPatterns:   matchRegexps,
+			ExcludePatterns: excludeRegexps,
+		}
+
+		// Test filtering - should not panic
+		result := ShouldPrintString([]byte(input), config)
+
+		// Check invariants
+		// 1. Result should be deterministic
+		result2 := ShouldPrintString([]byte(input), config)
+		if result != result2 {
+			t.Errorf("Non-deterministic result: first=%v, second=%v", result, result2)
+		}
+
+		// 2. If exclude pattern matches, result must be false
+		if len(excludeRegexps) > 0 {
+			for _, re := range excludeRegexps {
+				if re.Match([]byte(input)) && result {
+					t.Errorf("Exclude pattern matched but result is true")
+				}
+			}
+		}
+
+		// 3. If match patterns exist and result is true, at least one must match
+		if len(matchRegexps) > 0 && result {
+			matched := false
+			for _, re := range matchRegexps {
+				if re.Match([]byte(input)) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				t.Errorf("Result is true but no match patterns matched")
+			}
+		}
+
+		// 4. Exclude always overrides match
+		if len(matchRegexps) > 0 && len(excludeRegexps) > 0 {
+			matchFound := false
+			for _, re := range matchRegexps {
+				if re.Match([]byte(input)) {
+					matchFound = true
+					break
+				}
+			}
+			excludeFound := false
+			for _, re := range excludeRegexps {
+				if re.Match([]byte(input)) {
+					excludeFound = true
+					break
+				}
+			}
+			if matchFound && excludeFound && result {
+				t.Errorf("Both match and exclude found, but result is true (exclude should override)")
 			}
 		}
 	})

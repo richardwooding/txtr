@@ -1,0 +1,4 @@
+string("ERROR: failed")
+string("(?i)(error|warning|fatal)")
+string("")
+bool(false)

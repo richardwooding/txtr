@@ -899,6 +899,112 @@ txtr -f -t x --color=always file.bin
   - Makes test output clearer
   - Documents why certain cases aren't fully tested
 
+## Pattern Filtering
+
+The `-m/--match`, `-M/--exclude`, and `-i/--ignore-case` flags enable regex-based string filtering.
+
+### Architecture
+
+**Design Pattern:**
+- Compile patterns once at startup (fail fast on invalid regex)
+- Filter strings inline during extraction (before calling printFunc)
+- Exclude patterns take precedence over match patterns
+
+**Key Components:**
+
+1. **filter.go** (internal/extractor/filter.go):
+   - `CompilePatterns(patterns []string, ignoreCase bool) ([]*regexp.Regexp, error)`
+     - Compiles regex patterns with optional case-insensitive flag ((?i) prefix)
+     - Returns error with pattern number and original pattern for debugging
+   - `ShouldPrintString(str []byte, config Config) bool`
+     - Checks exclude patterns first (any match = false)
+     - Checks match patterns (if any defined, at least one must match)
+     - Returns true if no patterns defined (no filtering)
+
+2. **Config fields** (internal/extractor/extractor.go):
+   - `MatchPatterns []*regexp.Regexp` - Inclusion filter
+   - `ExcludePatterns []*regexp.Regexp` - Exclusion filter (blacklist)
+
+3. **CLI flags** (cmd/txtr/main.go):
+   - `MatchPatterns []string` - Can be specified multiple times
+   - `ExcludePatterns []string` - Can be specified multiple times
+   - `IgnoreCase bool` - Applies to both match and exclude
+
+4. **Pattern compilation** (cmd/txtr/main.go):
+   - Compiles patterns before config creation
+   - Exits with error on invalid regex (clear error message with pattern number)
+
+5. **Integration points** (internal/extractor/extractor.go):
+   - `extractASCII()` - 2 call sites
+   - `extractUTF8Aware()` - 4 call sites
+   - `extractUTF16()` - 2 call sites
+   - `extractUTF32()` - 2 call sites
+   - `extractASCIIFromBytes()` - 2 call sites
+   - `extractUTF16FromBytes()` - 2 call sites
+   - `extractUTF32FromBytes()` - 2 call sites
+
+### Testing
+
+**Unit Tests** (internal/extractor/filter_test.go):
+- `TestCompilePatterns` - 8 test cases covering valid/invalid patterns
+- `TestCompilePatternsIgnoreCase` - Case-sensitive vs case-insensitive behavior
+- `TestShouldPrintString` - 14 test cases covering all filtering logic combinations
+- `TestShouldPrintStringSpecialPatterns` - 6 common patterns (URL, email, IP, etc.)
+
+**Fuzz Test** (internal/extractor/fuzz_test.go):
+- `FuzzFilterPatterns` - Tests random inputs with ReDoS protection
+- Seed corpus: 5 files with common patterns (email, URL, IP, error, exclude)
+- In-code seed data: 10 f.Add() calls covering additional edge cases
+- Invariants:
+  - No panics during filtering
+  - Deterministic behavior (same input = same result)
+  - Exclude always overrides match
+  - 1-second timeout protection against ReDoS attacks
+- Execution rate: ~150K-280K execs/sec
+
+**CI/CD Integration** (.github/workflows/fuzz.yml):
+- Added `FuzzFilterPatterns` to matrix (9 total fuzz targets)
+- Runs on PRs (2min), daily (1hr), and manual dispatch
+
+### Usage Examples
+
+```bash
+# Extract email addresses
+txtr -m '\S+@\S+\.\S+' file.bin
+
+# Extract URLs
+txtr -m 'https?://\S+' malware.exe
+
+# Find error messages (case-insensitive)
+txtr -m -i 'error|warning|fatal' app.log
+
+# Exclude debug symbols
+txtr -M 'debug_.*|__.*' binary.exe
+
+# Multiple patterns (OR logic)
+txtr -m '\S+@\S+' -m 'https?://\S+' file.bin
+
+# Combine match and exclude
+txtr -m '\S+@\S+' -M 'spam.*' file.bin
+```
+
+### Common Patterns
+
+- Email: `\S+@\S+\.\S+`
+- URL: `https?://\S+`
+- IP address: `\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}`
+- Error messages: `(?i)(error|warning|fatal)`
+- Hex addresses: `0x[0-9a-fA-F]+`
+- UUID: `[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`
+
+### Implementation Notes
+
+- Filtering happens after minimum length check (more efficient)
+- Patterns are compiled once at startup (not per-string)
+- Timeout protection in fuzz tests prevents ReDoS in CI/CD
+- Exclude precedence ensures security (can't bypass exclusions)
+- Case-insensitive flag adds `(?i)` prefix to pattern
+
 ## Parallel Processing
 
 The `-P/--parallel` flag enables concurrent file processing using a worker pool pattern.
