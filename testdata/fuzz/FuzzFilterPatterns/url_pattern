@@ -1,0 +1,4 @@
+string("http://example.com")
+string("https?://\S+")
+string("")
+bool(false)

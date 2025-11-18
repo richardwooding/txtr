@@ -33,6 +33,7 @@ jobs:
           - FuzzExtractUTF8Aware
           - FuzzExtractUTF16
           - FuzzExtractUTF32
+          - FuzzFilterPatterns
     steps:
       - name: Checkout
         uses: actions/checkout@v4

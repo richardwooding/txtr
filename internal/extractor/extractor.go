@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"unicode/utf16"
 	"unicode/utf8"
 )
@@ -31,13 +32,15 @@ type Config struct {
 	Radix                string
 	PrintOffset          bool
 	Encoding             string
-	Unicode              string    // UTF-8 handling mode: default/invalid/locale/escape/hex/highlight
+	Unicode              string           // UTF-8 handling mode: default/invalid/locale/escape/hex/highlight
 	OutputSeparator      string
 	IncludeAllWhitespace bool
-	ScanAll              bool      // Scan entire file
-	ScanDataOnly         bool      // Scan only data sections (requires binary format detection)
-	TargetFormat         string    // Target binary format: elf/pe/macho/binary
-	ColorMode            ColorMode // When to use colored output
+	ScanAll              bool             // Scan entire file
+	ScanDataOnly         bool             // Scan only data sections (requires binary format detection)
+	TargetFormat         string           // Target binary format: elf/pe/macho/binary
+	ColorMode            ColorMode        // When to use colored output
+	MatchPatterns        []*regexp.Regexp // Patterns to match (include filter)
+	ExcludePatterns      []*regexp.Regexp // Patterns to exclude (blacklist filter)
 }
 
 // ExtractStrings reads from reader and extracts printable strings
@@ -78,7 +81,7 @@ func extractASCII(reader io.Reader, filename string, config Config, printFunc fu
 		if err != nil {
 			if err == io.EOF {
 				// Print the last string if it meets the criteria
-				if len(currentString) >= config.MinLength {
+				if len(currentString) >= config.MinLength && ShouldPrintString(currentString, config) {
 					printFunc(currentString, filename, stringStartOffset, config)
 				}
 				break
@@ -94,7 +97,7 @@ func extractASCII(reader io.Reader, filename string, config Config, printFunc fu
 			currentString = append(currentString, b)
 		} else {
 			// Non-printable character, check if we have a valid string
-			if len(currentString) >= config.MinLength {
+			if len(currentString) >= config.MinLength && ShouldPrintString(currentString, config) {
 				printFunc(currentString, filename, stringStartOffset, config)
 			}
 			currentString = currentString[:0]
@@ -117,7 +120,7 @@ func extractUTF8Aware(reader io.Reader, filename string, config Config, printFun
 		if err != nil {
 			if err == io.EOF {
 				// Print the last string if it meets the criteria
-				if len(currentString) >= config.MinLength {
+				if len(currentString) >= config.MinLength && ShouldPrintString(currentOutput, config) {
 					printFunc(currentOutput, filename, stringStartOffset, config)
 				}
 				break
@@ -137,7 +140,7 @@ func extractUTF8Aware(reader io.Reader, filename string, config Config, printFun
 				currentOutput = append(currentOutput, b)
 			} else {
 				// Non-printable, flush current string
-				if len(currentString) >= config.MinLength {
+				if len(currentString) >= config.MinLength && ShouldPrintString(currentOutput, config) {
 					printFunc(currentOutput, filename, stringStartOffset, config)
 				}
 				currentString = currentString[:0]
@@ -195,7 +198,7 @@ func extractUTF8Aware(reader io.Reader, filename string, config Config, printFun
 					}
 				} else {
 					// Non-printable rune
-					if len(currentString) >= config.MinLength {
+					if len(currentString) >= config.MinLength && ShouldPrintString(currentOutput, config) {
 						printFunc(currentOutput, filename, stringStartOffset, config)
 					}
 					currentString = currentString[:0]
@@ -203,7 +206,7 @@ func extractUTF8Aware(reader io.Reader, filename string, config Config, printFun
 				}
 			} else {
 				// Invalid UTF-8 sequence, treat as non-printable
-				if len(currentString) >= config.MinLength {
+				if len(currentString) >= config.MinLength && ShouldPrintString(currentOutput, config) {
 					printFunc(currentOutput, filename, stringStartOffset, config)
 				}
 				currentString = currentString[:0]
@@ -228,8 +231,9 @@ func extractUTF16(reader io.Reader, filename string, config Config, printFunc fu
 		if err != nil {
 			if err == io.EOF || err == io.ErrUnexpectedEOF {
 				// Print the last string if it meets the criteria
-				if len(currentRunes) >= config.MinLength {
-					printFunc([]byte(string(currentRunes)), filename, stringStartOffset, config)
+				str := []byte(string(currentRunes))
+				if len(currentRunes) >= config.MinLength && ShouldPrintString(str, config) {
+					printFunc(str, filename, stringStartOffset, config)
 				}
 				break
 			}
@@ -258,8 +262,9 @@ func extractUTF16(reader io.Reader, filename string, config Config, printFunc fu
 				}
 				currentRunes = append(currentRunes, r)
 			} else {
-				if len(currentRunes) >= config.MinLength {
-					printFunc([]byte(string(currentRunes)), filename, stringStartOffset, config)
+				str := []byte(string(currentRunes))
+				if len(currentRunes) >= config.MinLength && ShouldPrintString(str, config) {
+					printFunc(str, filename, stringStartOffset, config)
 				}
 				currentRunes = currentRunes[:0]
 			}
@@ -282,8 +287,9 @@ func extractUTF32(reader io.Reader, filename string, config Config, printFunc fu
 		if err != nil {
 			if err == io.EOF || err == io.ErrUnexpectedEOF {
 				// Print the last string if it meets the criteria
-				if len(currentRunes) >= config.MinLength {
-					printFunc([]byte(string(currentRunes)), filename, stringStartOffset, config)
+				str := []byte(string(currentRunes))
+				if len(currentRunes) >= config.MinLength && ShouldPrintString(str, config) {
+					printFunc(str, filename, stringStartOffset, config)
 				}
 				break
 			}
@@ -301,8 +307,9 @@ func extractUTF32(reader io.Reader, filename string, config Config, printFunc fu
 				}
 				currentRunes = append(currentRunes, r)
 			} else {
-				if len(currentRunes) >= config.MinLength {
-					printFunc([]byte(string(currentRunes)), filename, stringStartOffset, config)
+				str := []byte(string(currentRunes))
+				if len(currentRunes) >= config.MinLength && ShouldPrintString(str, config) {
+					printFunc(str, filename, stringStartOffset, config)
 				}
 				currentRunes = currentRunes[:0]
 			}
@@ -397,7 +404,7 @@ func extractASCIIFromBytes(data []byte, baseOffset int64, filename string, confi
 			}
 			currentString = append(currentString, b)
 		} else {
-			if len(currentString) >= config.MinLength {
+			if len(currentString) >= config.MinLength && ShouldPrintString(currentString, config) {
 				printFunc(currentString, filename, stringStartOffset, config)
 			}
 			currentString = currentString[:0]
@@ -405,7 +412,7 @@ func extractASCIIFromBytes(data []byte, baseOffset int64, filename string, confi
 	}
 
 	// Handle last string
-	if len(currentString) >= config.MinLength {
+	if len(currentString) >= config.MinLength && ShouldPrintString(currentString, config) {
 		printFunc(currentString, filename, stringStartOffset, config)
 	}
 }
@@ -425,15 +432,17 @@ func extractUTF16FromBytes(data []byte, baseOffset int64, filename string, confi
 			}
 			currentRunes = append(currentRunes, r)
 		} else {
-			if len(currentRunes) >= config.MinLength {
-				printFunc([]byte(string(currentRunes)), filename, stringStartOffset, config)
+			str := []byte(string(currentRunes))
+			if len(currentRunes) >= config.MinLength && ShouldPrintString(str, config) {
+				printFunc(str, filename, stringStartOffset, config)
 			}
 			currentRunes = currentRunes[:0]
 		}
 	}
 
-	if len(currentRunes) >= config.MinLength {
-		printFunc([]byte(string(currentRunes)), filename, stringStartOffset, config)
+	str := []byte(string(currentRunes))
+	if len(currentRunes) >= config.MinLength && ShouldPrintString(str, config) {
+		printFunc(str, filename, stringStartOffset, config)
 	}
 }
 
@@ -452,14 +461,16 @@ func extractUTF32FromBytes(data []byte, baseOffset int64, filename string, confi
 			}
 			currentRunes = append(currentRunes, r)
 		} else {
-			if len(currentRunes) >= config.MinLength {
-				printFunc([]byte(string(currentRunes)), filename, stringStartOffset, config)
+			str := []byte(string(currentRunes))
+			if len(currentRunes) >= config.MinLength && ShouldPrintString(str, config) {
+				printFunc(str, filename, stringStartOffset, config)
 			}
 			currentRunes = currentRunes[:0]
 		}
 	}
 
-	if len(currentRunes) >= config.MinLength {
-		printFunc([]byte(string(currentRunes)), filename, stringStartOffset, config)
+	str := []byte(string(currentRunes))
+	if len(currentRunes) >= config.MinLength && ShouldPrintString(str, config) {
+		printFunc(str, filename, stringStartOffset, config)
 	}
 }

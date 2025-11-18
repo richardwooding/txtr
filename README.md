@@ -157,6 +157,24 @@ txtr --color=never file.bin
 
 # Colors with filename and offset
 txtr -f -t x --color=always file.bin
+
+# Pattern filtering: extract only URLs
+txtr -m 'https?://\S+' malware.exe
+
+# Pattern filtering: extract email addresses
+txtr -m '\S+@\S+\.\S+' file.bin
+
+# Pattern filtering: find error messages (case-insensitive)
+txtr -m -i 'error|warning|fatal' app.log
+
+# Pattern filtering: exclude debug symbols
+txtr -M 'debug_.*|__.*' binary.exe
+
+# Multiple match patterns (OR logic)
+txtr -m '\S+@\S+' -m 'https?://\S+' file.bin
+
+# Combine match and exclude (exclude takes precedence)
+txtr -m '\S+@\S+' -M 'spam.*' file.bin
 ```
 
 ### JSON Output Format
@@ -230,6 +248,25 @@ The `--json` flag outputs results in structured JSON format, perfect for automat
   - `always`: Force colored output
   - `never`: Disable colored output
 
+### Pattern Filtering Options
+- `-m <pattern>`, `--match=<pattern>`: Only show strings matching regex pattern (can be specified multiple times for OR logic)
+- `-M <pattern>`, `--exclude=<pattern>`: Exclude strings matching regex pattern (can be specified multiple times)
+- `-i`, `--ignore-case`: Case-insensitive pattern matching
+
+**Common patterns:**
+- Email: `\S+@\S+\.\S+`
+- URL: `https?://\S+`
+- IP address: `\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}`
+- Error messages: `(?i)(error|warning|fatal)`
+- Hex addresses: `0x[0-9a-fA-F]+`
+- UUID: `[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`
+
+**Notes:**
+- Exclude patterns take precedence over match patterns
+- Multiple match patterns use OR logic (any pattern matches)
+- Multiple exclude patterns use OR logic (any pattern excludes)
+- Use `-i` flag for case-insensitive matching with both `-m` and `-M`
+
 ### Performance Options
 - `-P <workers>`, `--parallel=<workers>`: Number of parallel workers for processing multiple files (default: 0)
   - `0`: Auto-detect number of CPUs (default, enables automatic parallelism)
@@ -253,6 +290,7 @@ The `--json` flag outputs results in structured JSON format, perfect for automat
 
 - **Multi-Encoding Support**: Extract strings in 7-bit ASCII, 8-bit ASCII, UTF-16 (BE/LE), and UTF-32 (BE/LE)
 - **UTF-8 Unicode Support**: Full UTF-8 multibyte character handling with multiple display modes
+- **Regex Pattern Filtering**: Extract specific patterns (URLs, emails, IPs) or exclude unwanted strings (debug symbols, noise)
 - **Colored Output**: Visual distinction with ANSI colors for filenames, offsets, and string types (auto/always/never)
 - **Configurable Minimum Length**: Set minimum string length threshold
 - **Multiple File Processing**: Process multiple files in one command
@@ -267,7 +305,7 @@ The `--json` flag outputs results in structured JSON format, perfect for automat
 - **Modern CLI**: Built with Kong for clean, declarative argument parsing
 - **Clean Architecture**: Follows Standard Go Project Layout for maintainability
 - **Comprehensive Testing**: Full test coverage for all encoding formats
-- **Continuous Fuzzing**: 8 fuzz targets with daily automated execution for security
+- **Continuous Fuzzing**: 9 fuzz targets with daily automated execution for security
 
 ## Performance
 
