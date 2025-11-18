@@ -33,6 +33,7 @@ type CLI struct {
 	ScanAll              bool     `short:"a" name:"all" help:"Scan entire file"`
 	ScanDataOnly         bool     `short:"d" name:"data" help:"Scan only initialized data sections of binary files"`
 	TargetFormat         string   `short:"T" name:"target" enum:"elf,pe,macho,binary," default:"" help:"Specify binary format (elf/pe/macho/binary)"`
+	JSON                 bool     `short:"j" name:"json" help:"Output results in JSON format for automation"`
 	Version              bool     `short:"v" name:"version" help:"Display version information"`
 	VersionAlt           bool     `short:"V" hidden:"" help:"Display version information (alias)"`
 	Files                []string `arg:"" optional:"" name:"file" help:"Files to extract strings from" type:"path"`
@@ -101,7 +102,10 @@ func main() {
 	}
 
 	// Process files or stdin
-	if len(cli.Files) == 0 {
+	if cli.JSON {
+		// JSON output mode
+		processWithJSON(cli.Files, config)
+	} else if len(cli.Files) == 0 {
 		// Read from stdin
 		extractor.ExtractStrings(os.Stdin, "", config, printer.PrintString)
 	} else {
@@ -123,6 +127,129 @@ func main() {
 				}
 			}
 		}
+	}
+}
+
+// processWithJSON processes files or stdin with JSON output
+func processWithJSON(files []string, config extractor.Config) {
+	jsonPrinter := printer.NewJSONPrinter(config, os.Stdout)
+
+	if len(files) == 0 {
+		// Read from stdin
+		jsonPrinter.SetFileInfo("", "", nil)
+		extractor.ExtractStrings(os.Stdin, "", config, jsonPrinter.PrintString)
+	} else {
+		// For JSON output with multiple files, we process only the first file
+		// This matches the behavior of the issue description
+		filename := files[0]
+
+		if config.ScanDataOnly {
+			// Parse binary and extract from data sections
+			processFileWithBinaryParsingJSON(filename, config, jsonPrinter)
+		} else {
+			// Regular full-file scanning
+			file, err := os.Open(filename)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
+				os.Exit(1)
+			}
+			defer func() {
+				if err := file.Close(); err != nil {
+					fmt.Fprintf(os.Stderr, "strings: %s: error closing file: %v\n", filename, err)
+				}
+			}()
+
+			jsonPrinter.SetFileInfo(filename, "", nil)
+			extractor.ExtractStrings(file, filename, config, jsonPrinter.PrintString)
+		}
+	}
+
+	// Flush JSON output
+	if err := jsonPrinter.Flush(); err != nil {
+		fmt.Fprintf(os.Stderr, "strings: error writing JSON output: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// processFileWithBinaryParsingJSON handles binary parsing with JSON output
+func processFileWithBinaryParsingJSON(filename string, config extractor.Config, jsonPrinter *printer.JSONPrinter) {
+	// Determine format
+	var format binary.Format
+	var err error
+
+	if config.TargetFormat != "" && config.TargetFormat != "binary" {
+		// User specified a format
+		switch config.TargetFormat {
+		case "elf":
+			format = binary.FormatELF
+		case "pe":
+			format = binary.FormatPE
+		case "macho":
+			format = binary.FormatMachO
+		default:
+			format = binary.FormatRaw
+		}
+	} else {
+		// Auto-detect format
+		format, err = binary.DetectFormat(filename)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
+			os.Exit(1)
+		}
+	}
+
+	// Parse binary to get sections
+	sections, err := binary.ParseBinary(filename, format)
+	if err != nil {
+		// Fall back to regular scanning if parsing fails
+		fmt.Fprintf(os.Stderr, "strings: %s: warning: cannot parse as %v, falling back to full scan: %v\n",
+			filename, format, err)
+
+		file, err := os.Open(filename)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
+			os.Exit(1)
+		}
+		defer func() {
+			if err := file.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "strings: %s: error closing file: %v\n", filename, err)
+			}
+		}()
+
+		jsonPrinter.SetFileInfo(filename, format.String(), nil)
+		extractor.ExtractStrings(file, filename, config, jsonPrinter.PrintString)
+		return
+	}
+
+	// Collect section names
+	sectionNames := make([]string, len(sections))
+	for i, section := range sections {
+		sectionNames[i] = section.Name
+	}
+
+	// Set file info
+	jsonPrinter.SetFileInfo(filename, format.String(), sectionNames)
+
+	// If no sections found (raw binary), scan the whole file
+	if len(sections) == 0 {
+		file, err := os.Open(filename)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
+			os.Exit(1)
+		}
+		defer func() {
+			if err := file.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "strings: %s: error closing file: %v\n", filename, err)
+			}
+		}()
+
+		extractor.ExtractStrings(file, filename, config, jsonPrinter.PrintString)
+		return
+	}
+
+	// Extract strings from each data section
+	for _, section := range sections {
+		extractor.ExtractFromSection(section.Data, section.Name, section.Offset, filename, config, jsonPrinter.PrintString)
 	}
 }
 

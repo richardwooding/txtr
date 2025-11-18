@@ -26,6 +26,24 @@ const (
 	FormatRaw
 )
 
+// String returns the string representation of the Format
+func (f Format) String() string {
+	switch f {
+	case FormatELF:
+		return "ELF"
+	case FormatPE:
+		return "PE"
+	case FormatMachO:
+		return "Mach-O"
+	case FormatRaw:
+		return "Raw"
+	case FormatUnknown:
+		return "Unknown"
+	default:
+		return "Unknown"
+	}
+}
+
 // Section represents a section in a binary file
 type Section struct {
 	Name   string
