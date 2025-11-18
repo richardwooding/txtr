@@ -354,6 +354,6 @@ func formatWorkers(count int) string {
 	case 8:
 		return "8workers"
 	default:
-		return "workers"
+		return fmt.Sprintf("%dworkers", count)
 	}
 }

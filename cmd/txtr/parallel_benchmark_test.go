@@ -348,7 +348,7 @@ func formatWorkers(count int) string {
 	case 16:
 		return "16workers"
 	default:
-		return "workers"
+		return fmt.Sprintf("%dworkers", count)
 	}
 }
 
@@ -370,7 +370,7 @@ func formatFiles(count int) string {
 	case 32:
 		return "32files"
 	default:
-		return "files"
+		return fmt.Sprintf("%dfiles", count)
 	}
 }
 
@@ -383,6 +383,6 @@ func formatRatio(perWorker int) string {
 	case 4:
 		return "4each"
 	default:
-		return "each"
+		return fmt.Sprintf("%deach", perWorker)
 	}
 }

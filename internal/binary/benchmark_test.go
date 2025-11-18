@@ -299,14 +299,18 @@ func BenchmarkFormatComparison(b *testing.B) {
 
 // Helper function to format byte sizes
 func formatBytes(bytes int) string {
-	if bytes >= 1024*1024 {
+	switch bytes {
+	case 10 * 1024 * 1024:
 		return "10MB"
-	} else if bytes >= 1024 {
-		kb := bytes / 1024
-		if kb >= 1000 {
-			return "1MB"
-		}
+	case 1024 * 1024:
+		return "1MB"
+	case 100 * 1024:
 		return "100KB"
+	case 10 * 1024:
+		return "10KB"
+	case 1 * 1024:
+		return "1KB"
+	default:
+		return fmt.Sprintf("%dB", bytes)
 	}
-	return "1KB"
 }

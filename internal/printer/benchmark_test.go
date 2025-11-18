@@ -369,8 +369,16 @@ func BenchmarkPrintString_ConfigComparison(b *testing.B) {
 
 // Helper function to format length
 func formatLength(length int) string {
-	if length >= 1024 {
+	switch {
+	case length >= 1024:
 		return "1KB"
+	case length >= 256:
+		return "256B"
+	case length >= 64:
+		return "64B"
+	case length >= 16:
+		return "16B"
+	default:
+		return "4B"
 	}
-	return "Short"
 }
