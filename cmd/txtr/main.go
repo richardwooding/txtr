@@ -783,7 +783,7 @@ func processWithStats(files []string, workers int, config extractor.Config, perF
 		}
 
 		extractor.ExtractStrings(os.Stdin, "", config, collectFunc)
-		s.Format(os.Stdout)
+		s.Format(os.Stdout, config.ColorMode)
 		return
 	}
 
@@ -820,7 +820,7 @@ func processWithStats(files []string, workers int, config extractor.Config, perF
 			}
 
 			// Output statistics for this file
-			s.Format(os.Stdout)
+			s.Format(os.Stdout, config.ColorMode)
 			if filename != files[len(files)-1] {
 				fmt.Println() // Blank line between files
 			}
@@ -926,7 +926,7 @@ func processWithStats(files []string, workers int, config extractor.Config, perF
 	}
 
 	// Output aggregated statistics
-	aggregated.Format(os.Stdout)
+	aggregated.Format(os.Stdout, config.ColorMode)
 }
 
 // makeFilterTrackingFunc creates a wrapper function that tracks both filtered and unfiltered counts

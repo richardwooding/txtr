@@ -243,7 +243,7 @@ func TestFormat(t *testing.T) {
 	s.Add([]byte("foo bar baz"), "test.bin", 0x3000, config)
 
 	var buf bytes.Buffer
-	s.Format(&buf)
+	s.Format(&buf, extractor.ColorNever)
 
 	output := buf.String()
 
@@ -279,7 +279,7 @@ func TestFormatWithFiltering(t *testing.T) {
 	s.TotalBytes = 1000
 
 	var buf bytes.Buffer
-	s.Format(&buf)
+	s.Format(&buf, extractor.ColorNever)
 
 	output := buf.String()
 
@@ -492,5 +492,128 @@ func TestLengthBuckets(t *testing.T) {
 	}
 	if s.LengthBuckets["100+"] != 1 {
 		t.Errorf("100+ bucket = %d, want 1", s.LengthBuckets["100+"])
+	}
+}
+
+// TestFormatWithColors tests colored output
+func TestFormatWithColors(t *testing.T) {
+	s := New(4)
+	s.SetFileInfo("test.bin", "ELF", []string{".data"})
+	config := extractor.Config{Encoding: "s"}
+	s.Add([]byte("test string"), "test.bin", 0x1000, config)
+	s.Add([]byte("hello world"), "test.bin", 0x2000, config)
+
+	var buf bytes.Buffer
+	s.Format(&buf, extractor.ColorAlways)
+
+	output := buf.String()
+
+	// Check for ANSI color codes
+	if !strings.Contains(output, "\x1b[") {
+		t.Error("Format() with ColorAlways should contain ANSI color codes")
+	}
+
+	// Check for specific colors
+	if !strings.Contains(output, "\x1b[1m\x1b[36m") { // Bold Cyan for headers
+		t.Error("Format() should contain bold cyan for headers")
+	}
+	if !strings.Contains(output, "\x1b[33m") { // Yellow for numbers
+		t.Error("Format() should contain yellow for numbers")
+	}
+	if !strings.Contains(output, "\x1b[0m") { // Reset
+		t.Error("Format() should contain ANSI reset codes")
+	}
+}
+
+// TestFormatWithoutColors tests that no ANSI codes appear with ColorNever
+func TestFormatWithoutColors(t *testing.T) {
+	s := New(4)
+	s.SetFileInfo("test.bin", "PE", []string{".data", ".rdata"})
+	config := extractor.Config{Encoding: "s"}
+	s.Add([]byte("test string"), "test.bin", 0x1000, config)
+
+	var buf bytes.Buffer
+	s.Format(&buf, extractor.ColorNever)
+
+	output := buf.String()
+
+	// Check for no ANSI codes
+	if strings.Contains(output, "\x1b[") {
+		t.Error("Format() with ColorNever should not contain ANSI color codes")
+	}
+
+	// Verify content is still present
+	if !strings.Contains(output, "Statistics for test.bin:") {
+		t.Error("Format() should contain header even without colors")
+	}
+	if !strings.Contains(output, "PE") {
+		t.Error("Format() should contain binary format")
+	}
+}
+
+// TestFormatColorModes tests all color modes
+func TestFormatColorModes(t *testing.T) {
+	s := New(4)
+	config := extractor.Config{Encoding: "s"}
+	s.Add([]byte("test"), "test.bin", 0x1000, config)
+
+	tests := []struct {
+		name          string
+		mode          extractor.ColorMode
+		shouldHaveESC bool
+	}{
+		{"ColorNever", extractor.ColorNever, false},
+		{"ColorAlways", extractor.ColorAlways, true},
+		// ColorAuto would depend on TTY, skip in test
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			s.Format(&buf, tt.mode)
+			output := buf.String()
+
+			hasESC := strings.Contains(output, "\x1b[")
+			if hasESC != tt.shouldHaveESC {
+				t.Errorf("Format() with %s: hasESC=%v, want %v", tt.name, hasESC, tt.shouldHaveESC)
+			}
+		})
+	}
+}
+
+// TestFormatColoredElements tests that specific elements are colored correctly
+func TestFormatColoredElements(t *testing.T) {
+	s := New(4)
+	s.SetFileInfo("binary.exe", "PE", []string{".data", ".rdata"})
+	s.UnfilteredCount = 100
+	s.FilteredCount = 75
+	s.TotalStrings = 75
+	s.TotalBytes = 1500
+	s.MaxLength = 50
+	s.EncodingCounts["ascii-7bit"] = 70
+	s.EncodingCounts["utf-8"] = 5
+	s.LengthBuckets["11-50"] = 75
+
+	var buf bytes.Buffer
+	s.Format(&buf, extractor.ColorAlways)
+
+	output := buf.String()
+
+	// Verify different color codes are present for different elements
+	colorCodes := []struct {
+		name string
+		code string
+	}{
+		{"Bold Cyan (headers)", "\x1b[1m\x1b[36m"},
+		{"Yellow (numbers)", "\x1b[33m"},
+		{"Green (percentages)", "\x1b[32m"},
+		{"Magenta (encoding names)", "\x1b[35m"},
+		{"Cyan (file metadata)", "\x1b[36m"},
+	}
+
+	for _, cc := range colorCodes {
+		if !strings.Contains(output, cc.code) {
+			t.Errorf("Format() should contain %s (%s)", cc.name, cc.code)
+		}
 	}
 }

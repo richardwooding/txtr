@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/richardwooding/txtr/internal/extractor"
+	"github.com/richardwooding/txtr/internal/printer"
 )
 
 // Statistics holds aggregated statistics about extracted strings
@@ -170,23 +171,31 @@ func (s *Statistics) AvgLength() float64 {
 	return float64(s.TotalBytes) / float64(s.TotalStrings)
 }
 
-// Format outputs human-readable statistics to the writer
+// Format outputs human-readable statistics to the writer with optional colors
 //
 //nolint:errcheck // Writing to stdout/buffer, errors are not critical
-func (s *Statistics) Format(w io.Writer) {
+func (s *Statistics) Format(w io.Writer, colorMode extractor.ColorMode) {
+	// Determine if colors should be used
+	useColor := printer.ShouldUseColor(colorMode)
+
 	// Header
 	if s.Filename != "" {
-		fmt.Fprintf(w, "Statistics for %s:\n", s.Filename)
+		header := "Statistics for " + s.Filename + ":"
+		header = printer.ColorString(header, printer.AnsiBold+printer.AnsiCyan, useColor)
+		fmt.Fprintf(w, "%s\n", header)
 	} else {
-		fmt.Fprintf(w, "Statistics:\n")
+		header := printer.ColorString("Statistics:", printer.AnsiBold+printer.AnsiCyan, useColor)
+		fmt.Fprintf(w, "%s\n", header)
 	}
 
 	// Binary format info
 	if s.BinaryFormat != "" {
-		fmt.Fprintf(w, "  Binary format:     %s\n", s.BinaryFormat)
+		format := printer.ColorString(s.BinaryFormat, printer.AnsiCyan, useColor)
+		fmt.Fprintf(w, "  Binary format:     %s\n", format)
 	}
 	if len(s.Sections) > 0 {
-		fmt.Fprintf(w, "  Sections scanned:  %s\n", strings.Join(s.Sections, ", "))
+		sections := printer.ColorString(strings.Join(s.Sections, ", "), printer.AnsiCyan, useColor)
+		fmt.Fprintf(w, "  Sections scanned:  %s\n", sections)
 	}
 	if s.BinaryFormat != "" || len(s.Sections) > 0 {
 		fmt.Fprintln(w)
@@ -195,24 +204,36 @@ func (s *Statistics) Format(w io.Writer) {
 	// Count statistics
 	if s.UnfilteredCount > 0 {
 		// Show filter statistics
-		fmt.Fprintf(w, "  Total strings extracted:  %s\n", formatNumber(s.UnfilteredCount))
-		fmt.Fprintf(w, "  Matched filters:          %s (%.1f%%)\n",
-			formatNumber(s.FilteredCount),
-			percentage(s.FilteredCount, s.UnfilteredCount))
+		unfilteredNum := printer.ColorString(formatNumber(s.UnfilteredCount), printer.AnsiYellow, useColor)
+		fmt.Fprintf(w, "  Total strings extracted:  %s\n", unfilteredNum)
+
+		filteredNum := printer.ColorString(formatNumber(s.FilteredCount), printer.AnsiYellow, useColor)
+		pct := printer.ColorString(fmt.Sprintf("%.1f%%", percentage(s.FilteredCount, s.UnfilteredCount)), printer.AnsiGreen, useColor)
+		fmt.Fprintf(w, "  Matched filters:          %s (%s)\n", filteredNum, pct)
 	} else {
 		// No filtering
-		fmt.Fprintf(w, "  Total strings:     %s\n", formatNumber(s.TotalStrings))
+		totalNum := printer.ColorString(formatNumber(s.TotalStrings), printer.AnsiYellow, useColor)
+		fmt.Fprintf(w, "  Total strings:     %s\n", totalNum)
 	}
 
-	fmt.Fprintf(w, "  Total bytes:       %s\n", formatNumber(int(s.TotalBytes)))
-	fmt.Fprintf(w, "  Min length:        %d (configured)\n", s.MinLength)
-	fmt.Fprintf(w, "  Max length:        %d\n", s.MaxLength)
-	fmt.Fprintf(w, "  Avg length:        %.1f\n", s.AvgLength())
+	bytesNum := printer.ColorString(formatNumber(int(s.TotalBytes)), printer.AnsiYellow, useColor)
+	fmt.Fprintf(w, "  Total bytes:       %s\n", bytesNum)
+
+	minNum := printer.ColorString(fmt.Sprintf("%d", s.MinLength), printer.AnsiYellow, useColor)
+	fmt.Fprintf(w, "  Min length:        %s (configured)\n", minNum)
+
+	maxNum := printer.ColorString(fmt.Sprintf("%d", s.MaxLength), printer.AnsiYellow, useColor)
+	fmt.Fprintf(w, "  Max length:        %s\n", maxNum)
+
+	avgNum := printer.ColorString(fmt.Sprintf("%.1f", s.AvgLength()), printer.AnsiYellow, useColor)
+	fmt.Fprintf(w, "  Avg length:        %s\n", avgNum)
 	fmt.Fprintln(w)
 
 	// Encoding distribution
 	if len(s.EncodingCounts) > 0 {
-		fmt.Fprintln(w, "  Encoding distribution:")
+		header := printer.ColorString("Encoding distribution:", printer.AnsiBold+printer.AnsiCyan, useColor)
+		fmt.Fprintf(w, "  %s\n", header)
+
 		// Sort encoding types for consistent output
 		encodings := make([]string, 0, len(s.EncodingCounts))
 		for enc := range s.EncodingCounts {
@@ -222,25 +243,26 @@ func (s *Statistics) Format(w io.Writer) {
 
 		for _, enc := range encodings {
 			count := s.EncodingCounts[enc]
-			fmt.Fprintf(w, "    %-15s %6s (%5.1f%%)\n",
-				formatEncodingName(enc)+":",
-				formatNumber(count),
-				percentage(count, s.TotalStrings))
+			encName := printer.ColorString(formatEncodingName(enc)+":", printer.AnsiMagenta, useColor)
+			countNum := printer.ColorString(formatNumber(count), printer.AnsiYellow, useColor)
+			pct := printer.ColorString(fmt.Sprintf("%5.1f%%", percentage(count, s.TotalStrings)), printer.AnsiGreen, useColor)
+			fmt.Fprintf(w, "    %-15s %6s (%s)\n", encName, countNum, pct)
 		}
 		fmt.Fprintln(w)
 	}
 
 	// Length distribution
 	if len(s.LengthBuckets) > 0 {
-		fmt.Fprintln(w, "  Length distribution:")
+		header := printer.ColorString("Length distribution:", printer.AnsiBold+printer.AnsiCyan, useColor)
+		fmt.Fprintf(w, "  %s\n", header)
+
 		// Fixed bucket order
 		buckets := []string{"4-10", "11-50", "51-100", "100+"}
 		for _, bucket := range buckets {
 			if count, ok := s.LengthBuckets[bucket]; ok {
-				fmt.Fprintf(w, "    %s chars:    %6s (%5.1f%%)\n",
-					bucket,
-					formatNumber(count),
-					percentage(count, s.TotalStrings))
+				countNum := printer.ColorString(formatNumber(count), printer.AnsiYellow, useColor)
+				pct := printer.ColorString(fmt.Sprintf("%5.1f%%", percentage(count, s.TotalStrings)), printer.AnsiGreen, useColor)
+				fmt.Fprintf(w, "    %s chars:    %6s (%s)\n", bucket, countNum, pct)
 			}
 		}
 		fmt.Fprintln(w)
@@ -248,13 +270,18 @@ func (s *Statistics) Format(w io.Writer) {
 
 	// Longest strings
 	if len(s.LongestStrings) > 0 {
-		fmt.Fprintln(w, "  Longest strings:")
+		header := printer.ColorString("Longest strings:", printer.AnsiBold+printer.AnsiCyan, useColor)
+		fmt.Fprintf(w, "  %s\n", header)
+
 		for _, ls := range s.LongestStrings {
 			preview := ls.Value
 			if len(preview) > 50 {
 				preview = preview[:47] + "..."
 			}
-			fmt.Fprintf(w, "    %d chars at 0x%x: %q\n", ls.Length, ls.Offset, preview)
+			lengthNum := printer.ColorString(fmt.Sprintf("%d", ls.Length), printer.AnsiYellow, useColor)
+			offsetNum := printer.ColorString(fmt.Sprintf("0x%x", ls.Offset), printer.AnsiYellow, useColor)
+			previewStr := printer.ColorString(fmt.Sprintf("%q", preview), printer.AnsiDim, useColor)
+			fmt.Fprintf(w, "    %s chars at %s: %s\n", lengthNum, offsetNum, previewStr)
 		}
 	}
 }
