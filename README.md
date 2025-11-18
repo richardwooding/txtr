@@ -175,7 +175,55 @@ txtr -m '\S+@\S+' -m 'https?://\S+' file.bin
 
 # Combine match and exclude (exclude takes precedence)
 txtr -m '\S+@\S+' -M 'spam.*' file.bin
+
+# Statistics: quick file analysis summary
+txtr --stats binary.exe
+
+# Per-file statistics for multiple files
+txtr --stats --stats-per-file file1.bin file2.bin file3.bin
+
+# Statistics with pattern filtering
+txtr --stats -m '\S+@\S+' malware.exe
 ```
+
+### Statistics Output
+
+The `--stats` flag provides aggregated statistics instead of individual strings, perfect for quick file analysis and triage:
+
+```
+Statistics for binary.exe:
+  Binary format:     PE (Windows executable)
+  Sections scanned:  .data, .rdata
+
+  Total strings:     1,234
+  Total bytes:       45,678
+  Min length:        4 (configured)
+  Max length:        256
+  Avg length:        37.0
+
+  Encoding distribution:
+    ASCII (7-bit):   1,100 (89.1%)
+    UTF-8:             120 ( 9.7%)
+    High-byte:          14 ( 1.1%)
+
+  Length distribution:
+    4-10 chars:        800 (64.8%)
+    11-50 chars:       350 (28.3%)
+    51-100 chars:       60 ( 4.9%)
+    100+ chars:         24 ( 1.9%)
+
+  Longest strings:
+    256 chars at 0x4000: "Copyright (c) 2025..."
+    184 chars at 0x5200: "https://example.com..."
+    142 chars at 0x7800: "Error: Unable to..."
+```
+
+**Use cases:**
+- Quick triage: "Is this file interesting?"
+- Binary comparison: "How do these two firmware versions differ?"
+- Understanding composition: "What types of strings are in this binary?"
+- With filters: "How many email addresses are embedded?"
+- Per-file analysis: Compare statistics across multiple files
 
 ### JSON Output Format
 
@@ -247,6 +295,8 @@ The `--json` flag outputs results in structured JSON format, perfect for automat
   - `auto`: Automatically detect if output is a terminal (respects NO_COLOR)
   - `always`: Force colored output
   - `never`: Disable colored output
+- `--stats`: Output statistics summary instead of strings (for analysis and triage)
+- `--stats-per-file`: Show per-file statistics instead of aggregated (requires --stats)
 
 ### Pattern Filtering Options
 - `-m <pattern>`, `--match=<pattern>`: Only show strings matching regex pattern (can be specified multiple times for OR logic)
@@ -291,9 +341,10 @@ The `--json` flag outputs results in structured JSON format, perfect for automat
 - **Multi-Encoding Support**: Extract strings in 7-bit ASCII, 8-bit ASCII, UTF-16 (BE/LE), and UTF-32 (BE/LE)
 - **UTF-8 Unicode Support**: Full UTF-8 multibyte character handling with multiple display modes
 - **Regex Pattern Filtering**: Extract specific patterns (URLs, emails, IPs) or exclude unwanted strings (debug symbols, noise)
+- **Statistics Mode**: Aggregated analysis with encoding distribution, length buckets, and longest strings for quick triage
 - **Colored Output**: Visual distinction with ANSI colors for filenames, offsets, and string types (auto/always/never)
 - **Configurable Minimum Length**: Set minimum string length threshold
-- **Multiple File Processing**: Process multiple files in one command
+- **Multiple File Processing**: Process multiple files in one command with per-file or aggregated statistics
 - **Parallel Processing**: Automatic multi-core utilization for 2-8x speedup on multiple files
 - **Stdin Support**: Read from standard input for pipeline integration
 - **Flexible Offset Printing**: Display offsets in octal, decimal, or hexadecimal

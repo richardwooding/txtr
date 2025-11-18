@@ -14,6 +14,7 @@ import (
 	"github.com/richardwooding/txtr/internal/binary"
 	"github.com/richardwooding/txtr/internal/extractor"
 	"github.com/richardwooding/txtr/internal/printer"
+	"github.com/richardwooding/txtr/internal/stats"
 )
 
 // Build information (set by goreleaser via ldflags)
@@ -43,6 +44,8 @@ type CLI struct {
 	MatchPatterns        []string `short:"m" name:"match" help:"Only show strings matching pattern (can be specified multiple times)"`
 	ExcludePatterns      []string `short:"M" name:"exclude" help:"Exclude strings matching pattern (can be specified multiple times)"`
 	IgnoreCase           bool     `short:"i" name:"ignore-case" help:"Case-insensitive pattern matching"`
+	Stats                bool     `name:"stats" help:"Output statistics summary instead of strings"`
+	StatsPerFile         bool     `name:"stats-per-file" help:"Show per-file statistics instead of aggregated (requires --stats)"`
 	Version              bool     `short:"v" name:"version" help:"Display version information"`
 	VersionAlt           bool     `short:"V" hidden:"" help:"Display version information (alias)"`
 	Files                []string `arg:"" optional:"" name:"file" help:"Files to extract strings from" type:"path"`
@@ -118,6 +121,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Validate --stats-per-file requires --stats
+	if cli.StatsPerFile && !cli.Stats {
+		fmt.Fprintf(os.Stderr, "error: --stats-per-file requires --stats flag\n")
+		os.Exit(1)
+	}
+
+	// Validate --stats and --json cannot be used together (for now)
+	if cli.Stats && cli.JSON {
+		fmt.Fprintf(os.Stderr, "error: --stats and --json cannot be used together (use one or the other)\n")
+		os.Exit(1)
+	}
+
 	// Parse color mode
 	var colorMode extractor.ColorMode
 	switch cli.Color {
@@ -174,7 +189,10 @@ func main() {
 	}
 
 	// Process files or stdin
-	if cli.JSON {
+	if cli.Stats {
+		// Statistics output mode
+		processWithStats(cli.Files, workers, config, cli.StatsPerFile)
+	} else if cli.JSON {
 		// JSON output mode
 		processWithJSON(cli.Files, workers, config)
 	} else if len(cli.Files) == 0 {
@@ -750,4 +768,271 @@ func processFileForJSON(filename string, config extractor.Config) (string, []str
 	}
 
 	return format.String(), sectionNames, nil, nil
+}
+
+// processWithStats processes files or stdin with statistics output
+func processWithStats(files []string, workers int, config extractor.Config, perFile bool) {
+	// stdin case
+	if len(files) == 0 {
+		s := stats.New(config.MinLength)
+
+		// Create wrapper function for filter tracking if needed
+		collectFunc := s.Add
+		if len(config.MatchPatterns) > 0 || len(config.ExcludePatterns) > 0 {
+			collectFunc = makeFilterTrackingFunc(s, config)
+		}
+
+		extractor.ExtractStrings(os.Stdin, "", config, collectFunc)
+		s.Format(os.Stdout)
+		return
+	}
+
+	// Per-file statistics mode
+	if perFile {
+		for _, filename := range files {
+			s := stats.New(config.MinLength)
+
+			// Create wrapper function for filter tracking if needed
+			collectFunc := s.Add
+			if len(config.MatchPatterns) > 0 || len(config.ExcludePatterns) > 0 {
+				collectFunc = makeFilterTrackingFunc(s, config)
+			}
+
+			// Process file with binary parsing if needed
+			if config.ScanDataOnly {
+				if err := processFileWithStatsAndBinaryParsing(filename, config, s); err != nil {
+					fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
+					continue
+				}
+			} else {
+				file, err := os.Open(filename)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
+					continue
+				}
+
+				s.SetFileInfo(filename, "", nil)
+				extractor.ExtractStrings(file, filename, config, collectFunc)
+
+				if err := file.Close(); err != nil {
+					fmt.Fprintf(os.Stderr, "strings: %s: error closing file: %v\n", filename, err)
+				}
+			}
+
+			// Output statistics for this file
+			s.Format(os.Stdout)
+			if filename != files[len(files)-1] {
+				fmt.Println() // Blank line between files
+			}
+		}
+		return
+	}
+
+	// Aggregated statistics mode (default)
+	aggregated := stats.New(config.MinLength)
+
+	// Create wrapper function for filter tracking if needed
+	collectFunc := aggregated.Add
+	if len(config.MatchPatterns) > 0 || len(config.ExcludePatterns) > 0 {
+		collectFunc = makeFilterTrackingFunc(aggregated, config)
+	}
+
+	// Sequential processing
+	if len(files) == 1 || workers == 1 {
+		for _, filename := range files {
+			if config.ScanDataOnly {
+				if err := processFileWithStatsAndBinaryParsing(filename, config, aggregated); err != nil {
+					fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
+					continue
+				}
+			} else {
+				file, err := os.Open(filename)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
+					continue
+				}
+
+				extractor.ExtractStrings(file, filename, config, collectFunc)
+
+				if err := file.Close(); err != nil {
+					fmt.Fprintf(os.Stderr, "strings: %s: error closing file: %v\n", filename, err)
+				}
+			}
+		}
+	} else {
+		// Parallel processing
+		jobs := make(chan job, len(files))
+		results := make(chan *stats.Statistics, len(files))
+		var wg sync.WaitGroup
+
+		// Start workers
+		for w := 0; w < workers; w++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for j := range jobs {
+					s := stats.New(config.MinLength)
+
+					// Create wrapper function for filter tracking if needed
+					localCollectFunc := s.Add
+					if len(config.MatchPatterns) > 0 || len(config.ExcludePatterns) > 0 {
+						localCollectFunc = makeFilterTrackingFunc(s, config)
+					}
+
+					if config.ScanDataOnly {
+						if err := processFileWithStatsAndBinaryParsing(j.filename, config, s); err != nil {
+							fmt.Fprintf(os.Stderr, "strings: %s: %v\n", j.filename, err)
+							results <- nil
+							continue
+						}
+					} else {
+						file, err := os.Open(j.filename)
+						if err != nil {
+							fmt.Fprintf(os.Stderr, "strings: %s: %v\n", j.filename, err)
+							results <- nil
+							continue
+						}
+
+						extractor.ExtractStrings(file, j.filename, config, localCollectFunc)
+
+						if err := file.Close(); err != nil {
+							fmt.Fprintf(os.Stderr, "strings: %s: error closing file: %v\n", j.filename, err)
+						}
+					}
+
+					results <- s
+				}
+			}()
+		}
+
+		// Send jobs
+		for _, filename := range files {
+			jobs <- job{filename: filename}
+		}
+		close(jobs)
+
+		// Wait for workers to finish
+		go func() {
+			wg.Wait()
+			close(results)
+		}()
+
+		// Merge results
+		for s := range results {
+			if s != nil {
+				aggregated.Merge(s)
+			}
+		}
+	}
+
+	// Output aggregated statistics
+	aggregated.Format(os.Stdout)
+}
+
+// makeFilterTrackingFunc creates a wrapper function that tracks both filtered and unfiltered counts
+func makeFilterTrackingFunc(s *stats.Statistics, _ extractor.Config) func([]byte, string, int64, extractor.Config) {
+	return func(str []byte, filename string, offset int64, cfg extractor.Config) {
+		// Track unfiltered count
+		s.AddUnfiltered()
+
+		// Check if string should be included (filtering logic)
+		if extractor.ShouldPrintString(str, cfg) {
+			// String passed filters, add to statistics
+			s.Add(str, filename, offset, cfg)
+		}
+	}
+}
+
+// processFileWithStatsAndBinaryParsing processes a file with binary parsing for statistics
+func processFileWithStatsAndBinaryParsing(filename string, config extractor.Config, s *stats.Statistics) error {
+	// Determine format
+	var format binary.Format
+	var err error
+
+	if config.TargetFormat != "" && config.TargetFormat != "binary" {
+		switch config.TargetFormat {
+		case "elf":
+			format = binary.FormatELF
+		case "pe":
+			format = binary.FormatPE
+		case "macho":
+			format = binary.FormatMachO
+		default:
+			format = binary.FormatRaw
+		}
+	} else {
+		format, err = binary.DetectFormat(filename)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Parse binary to get sections
+	sections, err := binary.ParseBinary(filename, format)
+	if err != nil {
+		// Fall back to regular scanning
+		file, openErr := os.Open(filename)
+		if openErr != nil {
+			return openErr
+		}
+		defer func() {
+			if err := file.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "strings: %s: error closing file: %v\n", filename, err)
+			}
+		}()
+
+		s.SetFileInfo(filename, format.String(), nil)
+
+		// Create wrapper function for filter tracking if needed
+		collectFunc := s.Add
+		if len(config.MatchPatterns) > 0 || len(config.ExcludePatterns) > 0 {
+			collectFunc = makeFilterTrackingFunc(s, config)
+		}
+
+		extractor.ExtractStrings(file, filename, config, collectFunc)
+		return nil
+	}
+
+	// Collect section names
+	sectionNames := make([]string, len(sections))
+	for i, section := range sections {
+		sectionNames[i] = section.Name
+	}
+
+	s.SetFileInfo(filename, format.String(), sectionNames)
+
+	// If no sections found, scan whole file
+	if len(sections) == 0 {
+		file, openErr := os.Open(filename)
+		if openErr != nil {
+			return openErr
+		}
+		defer func() {
+			if err := file.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "strings: %s: error closing file: %v\n", filename, err)
+			}
+		}()
+
+		// Create wrapper function for filter tracking if needed
+		collectFunc := s.Add
+		if len(config.MatchPatterns) > 0 || len(config.ExcludePatterns) > 0 {
+			collectFunc = makeFilterTrackingFunc(s, config)
+		}
+
+		extractor.ExtractStrings(file, filename, config, collectFunc)
+		return nil
+	}
+
+	// Create wrapper function for filter tracking if needed
+	collectFunc := s.Add
+	if len(config.MatchPatterns) > 0 || len(config.ExcludePatterns) > 0 {
+		collectFunc = makeFilterTrackingFunc(s, config)
+	}
+
+	// Extract strings from data sections
+	for _, section := range sections {
+		extractor.ExtractFromSection(section.Data, section.Name, section.Offset, filename, config, collectFunc)
+	}
+
+	return nil
 }

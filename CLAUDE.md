@@ -435,6 +435,75 @@ txtr dev
 GNU strings compatible utility written in Go
 ```
 
+## Statistics Mode
+
+The `--stats` flag outputs aggregated statistics instead of individual strings, useful for quick file analysis and triage.
+
+### Usage
+
+```bash
+# Basic statistics
+txtr --stats binary.exe
+
+# Per-file statistics for multiple files
+txtr --stats --stats-per-file file1.bin file2.bin
+
+# Statistics with pattern filtering
+txtr --stats -m '\S+@\S+' malware.exe
+
+# Works with binary parsing
+txtr --stats -d binary.exe
+```
+
+### Architecture
+
+**Package**: `internal/stats`
+
+**Core Types:**
+- `Statistics` struct: Aggregates string metrics during extraction
+  - Count fields: TotalStrings, TotalBytes, MinLength, MaxLength
+  - Distribution maps: EncodingCounts, LengthBuckets
+  - File metadata: Filename, BinaryFormat, Sections
+  - Filter tracking: UnfilteredCount, FilteredCount
+  - Longest strings: Top 5 with offsets
+
+**Key Methods:**
+- `New(minLength int)`: Creates initialized Statistics instance
+- `Add(str []byte, filename string, offset int64, config Config)`: Collects string (matches printFunc signature)
+- `AddUnfiltered()`: Tracks strings before filtering
+- `Format(w io.Writer)`: Human-readable output with commas and percentages
+- `ToJSON()`: Structured JSON output (future feature)
+- `Merge(other *Statistics)`: Combines statistics for parallel aggregation
+
+**Integration Points:**
+- `cmd/txtr/main.go`:
+  - `processWithStats()`: Routes to statistics mode
+  - `makeFilterTrackingFunc()`: Wraps Add() to track filter statistics
+  - `processFileWithStatsAndBinaryParsing()`: Handles binary format detection with statistics
+- `internal/extractor`: Statistics.Add() passed as printFunc callback
+- Parallel processing: Worker pool aggregates per-file statistics via Merge()
+
+**Output Features:**
+- Human-readable formatting with thousand separators
+- Percentage calculations with 1 decimal place
+- Encoding classification: 7-bit ASCII, 8-bit, UTF-8, UTF-16, UTF-32
+- Length buckets: 4-10, 11-50, 51-100, 100+ characters
+- Top 5 longest strings with offset and preview
+- Filter statistics: Shows extraction count and match percentage
+
+**Testing:**
+- Unit tests: 18 test functions covering all methods
+- Edge cases: Empty files, single string, zero division
+- Format verification: Number formatting, percentages, encoding names
+- Merge testing: Parallel aggregation correctness
+
+**Use Cases:**
+- Quick triage: "Is this file interesting?"
+- Binary comparison: "How do these firmware versions differ?"
+- Pattern analysis: "How many URLs are embedded?"
+- Encoding distribution: "Is this file ASCII or Unicode?"
+- Per-file analysis: Compare multiple files side-by-side
+
 ## Architecture
 
 This project follows the Standard Go Project Layout with clear separation of concerns:
