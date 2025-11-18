@@ -78,6 +78,8 @@ func benchmarkSequential(b *testing.B, files []string) {
 		MinLength: 4,
 		Encoding:  "s",
 	}
+	// Use no-op print function for benchmarking
+	printFunc := func(_ []byte, _ string, _ int64, _ extractor.Config) {}
 
 	totalSize := int64(len(files) * 1024 * 1024)
 	b.SetBytes(totalSize)
@@ -85,7 +87,7 @@ func benchmarkSequential(b *testing.B, files []string) {
 
 	for i := 0; i < b.N; i++ {
 		for _, filename := range files {
-			processFile(filename, config)
+			_ = extractor.ExtractStringsFromFile(filename, config, printFunc)
 		}
 	}
 
@@ -151,12 +153,13 @@ func BenchmarkSpeedup_4Files(b *testing.B) {
 		MinLength: 4,
 		Encoding:  "s",
 	}
+	printFunc := func(_ []byte, _ string, _ int64, _ extractor.Config) {}
 
 	b.Run("Sequential", func(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			for _, filename := range files {
-				processFile(filename, config)
+				_ = extractor.ExtractStringsFromFile(filename, config, printFunc)
 			}
 		}
 	})
@@ -182,12 +185,13 @@ func BenchmarkSpeedup_8Files(b *testing.B) {
 		MinLength: 4,
 		Encoding:  "s",
 	}
+	printFunc := func(_ []byte, _ string, _ int64, _ extractor.Config) {}
 
 	b.Run("Sequential", func(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			for _, filename := range files {
-				processFile(filename, config)
+				_ = extractor.ExtractStringsFromFile(filename, config, printFunc)
 			}
 		}
 	})

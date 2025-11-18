@@ -224,7 +224,7 @@ func BenchmarkJSONPrinter_Flush(b *testing.B) {
 		}
 		b.StartTimer()
 
-		printer.Flush()
+		_ = printer.Flush()
 	}
 }
 
@@ -249,7 +249,7 @@ func benchmarkJSONPrinterWithCount(b *testing.B, count int) {
 		for j := 0; j < count; j++ {
 			printer.PrintString([]byte("Test String"), "test.bin", int64(j*10), config)
 		}
-		printer.Flush()
+		_ = printer.Flush()
 	}
 }
 
