@@ -34,6 +34,7 @@ type FileResult struct {
 	Format   string         `json:"format,omitempty"`
 	Sections []string       `json:"sections,omitempty"`
 	Strings  []StringResult `json:"strings"`
+	Error    string         `json:"error,omitempty"`
 }
 
 // Summary contains metadata about the extraction
@@ -46,12 +47,14 @@ type Summary struct {
 
 // JSONPrinter collects and outputs strings in JSON format
 type JSONPrinter struct {
-	results    []StringResult
-	config     extractor.Config
-	writer     io.Writer
-	currentFile string
-	format      string
-	sections    []string
+	FileResults []FileResult // Exported for access in parallel processing
+	config      extractor.Config
+	writer      io.Writer
+	// Current file being processed
+	currentFile    string
+	currentFormat  string
+	currentSections []string
+	currentStrings  []StringResult
 }
 
 // NewJSONPrinter creates a new JSON printer
@@ -60,17 +63,26 @@ func NewJSONPrinter(config extractor.Config, writer io.Writer) *JSONPrinter {
 		writer = os.Stdout
 	}
 	return &JSONPrinter{
-		results: make([]StringResult, 0),
-		config:  config,
-		writer:  writer,
+		FileResults:    make([]FileResult, 0),
+		currentStrings: make([]StringResult, 0),
+		config:         config,
+		writer:         writer,
 	}
 }
 
 // SetFileInfo sets the current file and format information
+// If there's a current file being processed, it finalizes it first
 func (jp *JSONPrinter) SetFileInfo(filename, format string, sections []string) {
+	// Finalize previous file if exists
+	if jp.currentFile != "" || len(jp.currentStrings) > 0 {
+		jp.FinalizeCurrentFile()
+	}
+
+	// Start new file
 	jp.currentFile = filename
-	jp.format = format
-	jp.sections = sections
+	jp.currentFormat = format
+	jp.currentSections = sections
+	jp.currentStrings = make([]StringResult, 0)
 }
 
 // PrintString collects a string result (implements the printFunc signature)
@@ -88,19 +100,67 @@ func (jp *JSONPrinter) PrintString(str []byte, filename string, offset int64, co
 		result.File = filename
 	}
 
-	jp.results = append(jp.results, result)
+	jp.currentStrings = append(jp.currentStrings, result)
+}
+
+// FinalizeCurrentFile adds the current file's results to the fileResults list
+func (jp *JSONPrinter) FinalizeCurrentFile() {
+	fileResult := FileResult{
+		File:     jp.currentFile,
+		Format:   jp.currentFormat,
+		Sections: jp.currentSections,
+		Strings:  jp.currentStrings,
+	}
+
+	jp.FileResults = append(jp.FileResults, fileResult)
+
+	// Reset current file state
+	jp.currentFile = ""
+	jp.currentFormat = ""
+	jp.currentSections = nil
+	jp.currentStrings = make([]StringResult, 0)
+}
+
+// AddFileResult adds a file result (useful for adding error results from parallel processing)
+func (jp *JSONPrinter) AddFileResult(filename, format string, sections []string, strings []StringResult, err error) {
+	// Ensure strings is never nil (use empty array instead)
+	if strings == nil {
+		strings = make([]StringResult, 0)
+	}
+
+	fileResult := FileResult{
+		File:     filename,
+		Format:   format,
+		Sections: sections,
+		Strings:  strings,
+	}
+
+	if err != nil {
+		fileResult.Error = err.Error()
+	}
+
+	jp.FileResults = append(jp.FileResults, fileResult)
 }
 
 // Flush outputs all collected results as JSON
 func (jp *JSONPrinter) Flush() error {
-	// Calculate summary
+	// Finalize any remaining current file
+	if jp.currentFile != "" || len(jp.currentStrings) > 0 {
+		jp.FinalizeCurrentFile()
+	}
+
+	// Calculate summary across all files
+	totalStrings := 0
 	totalBytes := int64(0)
-	for _, result := range jp.results {
-		totalBytes += int64(result.Length)
+	for _, fileResult := range jp.FileResults {
+		for _, result := range fileResult.Strings {
+			totalStrings++
+			totalBytes += int64(result.Length)
+		}
 	}
 
 	summary := Summary{
-		TotalStrings: len(jp.results),
+		TotalStrings: totalStrings,
 		TotalBytes:   totalBytes,
 		MinLength:    jp.config.MinLength,
 		Encoding:     getEncodingName(jp.config.Encoding),
@@ -108,20 +168,8 @@ func (jp *JSONPrinter) Flush() error {
 
 	// Build output structure
 	output := JSONOutput{
-		Files: []FileResult{
-			{
-				File:     jp.currentFile,
-				Format:   jp.format,
-				Sections: jp.sections,
-				Strings:  jp.results,
-			},
-		},
+		Files:   jp.FileResults,
 		Summary: summary,
-	}
-
-	// If no file is specified (stdin), omit file field
-	if jp.currentFile == "" {
-		output.Files[0].File = ""
 	}
 
 	// Encode and output
