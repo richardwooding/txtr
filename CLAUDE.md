@@ -30,6 +30,36 @@ set -o pipefail; go test -v ./internal/printer
 set -o pipefail; go test -v -run TestIsPrintable ./internal/extractor
 ```
 
+### Run Benchmarks
+```bash
+# Run all benchmarks
+set -o pipefail; go test -bench=. -benchmem -run=^$ ./...
+
+# Run benchmarks for a specific package
+set -o pipefail; go test -bench=. -benchmem -run=^$ ./internal/extractor
+
+# Run a specific benchmark
+set -o pipefail; go test -bench=BenchmarkExtractASCII_1MB -benchtime=5s -run=^$ ./internal/extractor
+
+# Run benchmarks with longer timing for more accurate results
+set -o pipefail; go test -bench=. -benchmem -benchtime=10s -run=^$ ./internal/extractor
+
+# Compare benchmarks (save baseline first)
+set -o pipefail; go test -bench=. -benchmem -run=^$ ./internal/extractor | tee old.txt
+# Make changes...
+set -o pipefail; go test -bench=. -benchmem -run=^$ ./internal/extractor | tee new.txt
+benchstat old.txt new.txt
+```
+
+**Benchmark Categories:**
+- **Core extraction** (`internal/extractor/benchmark_test.go`): ASCII, UTF-8, UTF-16, UTF-32 extraction across file sizes
+- **Pattern filtering** (`internal/extractor/filter_benchmark_test.go`): Regex pattern matching overhead
+- **Binary parsing** (`internal/binary/benchmark_test.go`): ELF, PE, Mach-O format detection and parsing
+- **Output formatting** (`internal/printer/benchmark_test.go`): Text, JSON, colored output overhead
+- **Statistics** (`internal/stats/benchmark_test.go`): Statistics collection and aggregation
+- **Parallel processing** (`cmd/txtr/parallel_benchmark_test.go`): Worker pool and scalability tests
+- **mmap optimization** (`internal/extractor/mmap_benchmark_test.go`): mmap vs buffered I/O comparison
+
 ### Run the Binary
 ```bash
 # After building
@@ -1234,6 +1264,195 @@ The project uses memory-mapped I/O (mmap) for large files to achieve 2-3x perfor
 - Automatic optimization (no user configuration required)
 - CLI flags for control and testing (`--no-mmap`, `--mmap-threshold`)
 - Works with all features (parallel, JSON, stats, binary parsing)
+
+## Benchmarking
+
+The project includes a comprehensive benchmark suite covering all major components and features. Benchmarks validate performance claims, track regressions, and provide data for optimization decisions.
+
+### Benchmark Organization
+
+Benchmarks are organized by component with clear naming conventions:
+
+**internal/extractor/benchmark_test.go** (Core extraction - 41 benchmarks):
+- File size scaling: 1KB, 10KB, 100KB, 1MB, 10MB, 100MB
+- All encodings: ASCII (7-bit, 8-bit), UTF-8 (4 modes), UTF-16 (BE/LE), UTF-32 (BE/LE)
+- String density: Sparse vs dense patterns
+- Minimum length impact: 4, 8, 16, 32 characters
+- Encoding comparison: Side-by-side performance at same file size
+
+**internal/extractor/filter_benchmark_test.go** (Pattern filtering - 11 benchmarks):
+- Pattern compilation: Single, multiple, case-insensitive
+- Matching overhead: No filter, simple, complex, multiple patterns
+- Exclude patterns: Blacklist performance
+- Extraction impact: Filter overhead during extraction
+- Pattern complexity: Literal, simple, moderate, complex, very complex regex
+
+**internal/extractor/mmap_benchmark_test.go** (Memory-mapped I/O - 14 benchmarks):
+- mmap vs buffered I/O comparison
+- File sizes: 1MB, 10MB, 100MB
+- Encodings: ASCII, UTF-16, 8-bit ASCII
+- Validates 2x performance claim
+
+**internal/binary/benchmark_test.go** (Binary parsing - 14 benchmarks):
+- Format detection: ELF, PE, Mach-O, unknown
+- Parser performance: Individual format parsers
+- File size impact: 1KB to 10MB
+- Full pipeline: Format detection + parsing
+
+**internal/printer/benchmark_test.go** (Output formatting - 23 benchmarks):
+- Basic printing: Simple, with filename, with offset (octal/decimal/hex)
+- Color mode overhead: Never, always, auto
+- JSON output: Collection, flush, small/medium/large datasets
+- Writer types: Discard, buffer
+- Configuration comparison: Minimal, with filename, with offset, with color, with all
+
+**internal/stats/benchmark_test.go** (Statistics - 18 benchmarks):
+- Statistics collection: Small, medium, large datasets
+- Formatting: Output generation overhead
+- Merging: Parallel aggregation simulation
+- Encoding classification: Different string types
+- Length bucketing: Distribution tracking
+- Longest strings: Top-N tracking
+- Filter tracking: Unfiltered vs filtered counts
+- Comparison: Standard extraction vs statistics collection
+
+**cmd/txtr/parallel_benchmark_test.go** (Parallel processing - 15 benchmarks):
+- Worker counts: 1, 2, 4, 8, 16 workers
+- File counts: 1, 2, 4, 8, 16, 32 files
+- Sequential vs parallel: Speedup validation
+- File sizes: Small (100KB), medium (1MB), large (10MB)
+- Worker/file balance: Optimal worker-to-file ratios
+- Auto-detection: Runtime.NumCPU() behavior
+
+### Running Benchmarks
+
+```bash
+# Run all benchmarks (short)
+go test -bench=. -benchmem -benchtime=1s -run=^$ ./...
+
+# Run all benchmarks (comprehensive, ~10min)
+go test -bench=. -benchmem -benchtime=10s -run=^$ ./...
+
+# Run specific category
+go test -bench=BenchmarkExtract -benchmem -run=^$ ./internal/extractor
+
+# Run with CPU profiling
+go test -bench=BenchmarkExtractASCII_100MB -cpuprofile=cpu.prof -run=^$ ./internal/extractor
+go tool pprof cpu.prof
+
+# Run with memory profiling
+go test -bench=BenchmarkExtractASCII_100MB -memprofile=mem.prof -run=^$ ./internal/extractor
+go tool pprof mem.prof
+
+# Compare before/after (using benchstat)
+go test -bench=. -benchmem -count=5 -run=^$ ./internal/extractor > old.txt
+# Make changes...
+go test -bench=. -benchmem -count=5 -run=^$ ./internal/extractor > new.txt
+benchstat old.txt new.txt
+```
+
+### Performance Characteristics
+
+**Core Extraction Throughput** (Apple M4 Pro, 12 cores):
+- ASCII (7-bit): ~415 MB/s (1MB), ~417 MB/s (10MB), ~394 MB/s (100MB)
+- ASCII (8-bit): ~434 MB/s (1MB), ~433 MB/s (10MB), ~426 MB/s (100MB)
+- UTF-8 (locale mode): ~153 MB/s (1MB), ~94 MB/s (10MB), ~153 MB/s (100MB)
+- UTF-8 (escape mode): ~59 MB/s (1MB), ~58 MB/s (10MB), ~60 MB/s (100MB)
+- UTF-16LE: ~133 MB/s (1MB), ~130 MB/s (10MB), ~132 MB/s (100MB)
+- UTF-32LE: ~247 MB/s (1MB), ~249 MB/s (10MB), ~246 MB/s (100MB)
+
+**mmap Optimization**:
+- 1MB files: 2.22x faster (2.8ms → 1.3ms)
+- 10MB files: 2.18x faster (27.9ms → 12.8ms)
+- 100MB files: 1.81x faster (279ms → 155ms)
+
+**Pattern Filtering Overhead**:
+- No filter: ~410 MB/s baseline
+- Simple pattern: ~203 MB/s (2x slower)
+- Complex pattern: ~76 MB/s (5.4x slower)
+- Multiple patterns: ~35 MB/s (11.7x slower)
+
+**Binary Parsing**:
+- Format detection: ~8-9 µs per file
+- ELF/PE/Mach-O parsing: <1ms for small binaries
+
+**Output Formatting**:
+- Simple print: ~11 ns/op
+- With metadata (filename + offset): ~15-20 ns/op
+- JSON collection: ~40 ns/op per string
+- Color overhead: Negligible (<1ns)
+
+### CI Integration
+
+Benchmarks run automatically on every push and pull request via `.github/workflows/ci.yml`:
+
+```yaml
+benchmark:
+  name: Benchmark
+  runs-on: ubuntu-latest
+  steps:
+    - name: Run benchmarks
+      run: go test -bench=. -benchmem -benchtime=5s -timeout=30m ./... | tee benchmark.txt
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-results
+        path: benchmark.txt
+        retention-days: 30
+```
+
+Results are uploaded as artifacts for 30-day retention, enabling historical performance tracking.
+
+### Benchmark Development Guidelines
+
+When adding new benchmarks:
+
+1. **Naming Convention**: `Benchmark<Component>_<Variant>_<Size>`
+   - Example: `BenchmarkExtractASCII_10MB`
+
+2. **Report Throughput**: For I/O operations, report MB/s:
+   ```go
+   b.SetBytes(int64(size))
+   throughput := float64(size) * float64(b.N) / b.Elapsed().Seconds() / 1e6
+   b.ReportMetric(throughput, "MB/s")
+   ```
+
+3. **Use Realistic Data**: Generate data similar to real-world usage
+   - Mix printable and non-printable bytes
+   - Include edge cases (UTF-8 multibyte, surrogate pairs, etc.)
+
+4. **Benchmark Setup**: Use `b.ResetTimer()` after setup:
+   ```go
+   data := createBenchmarkData(size)
+   b.ResetTimer()
+   for i := 0; i < b.N; i++ {
+       // Benchmark code
+   }
+   ```
+
+5. **Memory Benchmarks**: Use `b.ReportAllocs()` for allocation tracking
+   ```go
+   b.ReportAllocs()
+   b.ResetTimer()
+   ```
+
+6. **Sub-benchmarks**: Use `b.Run()` for variants:
+   ```go
+   for _, mode := range modes {
+       b.Run(mode, func(b *testing.B) {
+           // Benchmark code
+       })
+   }
+   ```
+
+### Validating Performance Claims
+
+Before making performance claims in README.md or documentation:
+
+1. Run benchmarks with `-benchtime=10s -count=5` for statistical significance
+2. Use `benchstat` to verify significance: `p < 0.05` and delta > 10%
+3. Test on multiple architectures (amd64, arm64) if claiming platform-independent speedups
+4. Document test environment (CPU, OS, Go version) with results
 
 ## Code Patterns
 
