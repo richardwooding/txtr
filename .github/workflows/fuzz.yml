@@ -56,7 +56,7 @@ jobs:
         id: fuzztime
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "time=2m" >> $GITHUB_OUTPUT
+            echo "time=3m" >> $GITHUB_OUTPUT
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "time=${{ github.event.inputs.fuzztime }}" >> $GITHUB_OUTPUT
           else
@@ -120,7 +120,7 @@ jobs:
         id: fuzztime
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "time=2m" >> $GITHUB_OUTPUT
+            echo "time=3m" >> $GITHUB_OUTPUT
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "time=${{ github.event.inputs.fuzztime }}" >> $GITHUB_OUTPUT
           else
