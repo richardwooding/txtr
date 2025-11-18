@@ -457,7 +457,9 @@ txtr/
 │   │   └── fuzz_test.go    # Fuzzing for string extraction
 │   └── printer/        # Output formatting logic
 │       ├── printer.go
-│       └── printer_test.go
+│       ├── printer_test.go
+│       ├── json.go          # JSON output format
+│       └── json_test.go
 ├── testdata/           # Test data and fuzz corpus
 │   └── fuzz/           # Seed corpus for fuzzing
 │       ├── FuzzExtractASCII/
@@ -496,6 +498,15 @@ txtr/
 
 **internal/printer/printer.go** - Output formatting:
 - `PrintString()`: Formats and outputs strings with optional filename prefix, offset, and custom separator
+
+**internal/printer/json.go** - JSON output formatting:
+- `JSONPrinter`: Collects strings and outputs in structured JSON format
+- `StringResult`: Represents a single extracted string with metadata
+- `JSONOutput`: Complete output structure with files and summary
+- `NewJSONPrinter()`: Creates a new JSON printer with configuration
+- `SetFileInfo()`: Sets file, format, and section metadata
+- `PrintString()`: Collects string results (implements printFunc signature)
+- `Flush()`: Outputs all collected results as JSON with summary statistics
 
 ### String Extraction Algorithm
 
@@ -551,6 +562,13 @@ Tests are organized by package:
 
 **internal/printer/printer_test.go**:
 - `TestPrintString`: Output formatting tests (currently skipped - requires stdout capture)
+
+**internal/printer/json_test.go**:
+- `TestJSONPrinter`: Tests basic JSON output with various configurations
+- `TestJSONPrinterWithFileInfo`: Tests JSON output with file metadata
+- `TestGetEncodingName`: Tests encoding name conversion
+- `TestJSONPrinterNilWriter`: Tests default writer behavior
+- `TestJSONOutputValid`: Tests JSON structure and validity
 
 ### Fuzzing
 
@@ -656,6 +674,7 @@ The application uses Kong for declarative CLI argument parsing:
 **Output Flags:**
 - `-s` / `--output-separator`: Custom output record separator
 - `-w` / `--include-all-whitespace`: Include newlines/tabs in strings
+- `-j` / `--json`: Output results in JSON format for automation
 
 **Utility Flags:**
 - `-a` / `--all`: Scan entire file (always enabled)
@@ -682,9 +701,87 @@ Kong struct tags define flags with types, defaults, enums, and help text. Specia
 - No libc or other dynamic dependencies required at runtime
 - Pure Go implementation enables cross-compilation to 10+ platforms
 
+## JSON Output Format
+
+The `--json` flag enables structured JSON output for automation and tool integration.
+
+### Architecture
+
+**Design Pattern:**
+- Collector pattern: JSONPrinter collects all strings before outputting
+- Implements same `printFunc` signature as regular PrintString
+- Buffers results in memory, then outputs complete JSON structure on Flush()
+
+**Output Structure:**
+```json
+{
+  "files": [
+    {
+      "file": "binary.exe",
+      "format": "PE",
+      "sections": [".data", ".rdata"],
+      "strings": [
+        {
+          "value": "Hello World",
+          "offset": 1024,
+          "offset_hex": "0x400",
+          "length": 11,
+          "encoding": "ascii-7bit"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "total_strings": 42,
+    "total_bytes": 1234,
+    "min_length": 4,
+    "encoding": "ascii-7bit"
+  }
+}
+```
+
+### Usage Examples
+
+```bash
+# Basic JSON output
+txtr --json file.bin
+
+# With jq filtering - strings longer than 20 chars
+txtr --json file.bin | jq '.files[0].strings[] | select(.length > 20)'
+
+# Extract offsets
+txtr --json file.bin | jq '.files[0].strings[].offset_hex'
+
+# Count total strings
+txtr --json file.bin | jq '.summary.total_strings'
+
+# Analyze binary format
+txtr --json -d binary.exe | jq '.files[0].format'
+
+# Get section information
+txtr --json -d binary.exe | jq '.files[0].sections[]'
+```
+
+### Implementation Details
+
+**File Processing:**
+- Currently processes only the first file for JSON output
+- Stdin input supported (file field omitted from output)
+- Works with all encodings (ASCII, UTF-16, UTF-32)
+- Works with `-d` flag to include format and section metadata
+
+**Encoding Names:**
+- `s` → `ascii-7bit`
+- `S` → `ascii-8bit`
+- `b` → `utf-16be`
+- `l` → `utf-16le`
+- `B` → `utf-32be`
+- `L` → `utf-32le`
+
 ## Code Patterns
 
 - Standard Go Project Layout for clear code organization
 - Error handling: Errors written to stderr with GNU strings-compatible format
 - Dependency injection: Print function passed to extractor for testability
 - Package separation: CLI, extraction logic, and output formatting are independent
+- Collector pattern: JSONPrinter buffers results before output for structured format

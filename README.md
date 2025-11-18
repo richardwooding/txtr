@@ -127,7 +127,53 @@ cat file.bin | txtr
 
 # Process multiple files
 txtr -f file1.bin file2.bin
+
+# JSON output for automation
+txtr --json file.bin
+
+# JSON output with jq filtering
+txtr --json file.bin | jq '.files[0].strings[] | select(.length > 20)'
+
+# JSON output with binary format detection
+txtr --json -d binary.exe | jq '.files[0].format'
 ```
+
+### JSON Output Format
+
+The `--json` flag outputs results in structured JSON format, perfect for automation, CI/CD pipelines, and integration with tools like `jq`:
+
+```json
+{
+  "files": [
+    {
+      "file": "binary.exe",
+      "format": "PE",
+      "sections": [".data", ".rdata"],
+      "strings": [
+        {
+          "value": "Hello World",
+          "offset": 1024,
+          "offset_hex": "0x400",
+          "length": 11,
+          "encoding": "ascii-7bit"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "total_strings": 42,
+    "total_bytes": 1234,
+    "min_length": 4,
+    "encoding": "ascii-7bit"
+  }
+}
+```
+
+**Use cases:**
+- Filter strings by length: `txtr --json file.bin | jq '.files[0].strings[] | select(.length > 20)'`
+- Extract offsets: `txtr --json file.bin | jq '.files[0].strings[].offset_hex'`
+- Count strings: `txtr --json file.bin | jq '.summary.total_strings'`
+- Analyze binary format: `txtr --json -d file.bin | jq '.files[0].format'`
 
 ## Supported Options
 
@@ -157,6 +203,7 @@ txtr -f file1.bin file2.bin
 ### Output Options
 - `-s <sep>`, `--output-separator=<sep>`: Custom output record separator (default: newline)
 - `-w`, `--include-all-whitespace`: Treat all whitespace characters as valid string components
+- `-j`, `--json`: Output results in JSON format for automation and tool integration
 
 ### Scan Options
 - `-a`, `--all`: Scan entire file (default behavior)
@@ -182,6 +229,7 @@ txtr -f file1.bin file2.bin
 - **Custom Output Separators**: Use custom delimiters between strings
 - **Whitespace Handling**: Optionally include all whitespace characters in strings
 - **Binary Format Support**: Parse ELF, PE, and Mach-O binaries to scan only data sections
+- **JSON Output**: Structured output for automation and tool integration
 - **GNU strings Compatible**: 100% feature parity with GNU strings (12/12 major features)
 - **Modern CLI**: Built with Kong for clean, declarative argument parsing
 - **Clean Architecture**: Follows Standard Go Project Layout for maintainability
