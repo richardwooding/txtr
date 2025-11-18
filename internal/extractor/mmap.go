@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"unicode/utf8"
 
 	"golang.org/x/exp/mmap"
 )
@@ -51,6 +52,7 @@ func ExtractStringsFromFile(path string, config Config, printFunc func([]byte, s
 		}
 		// If mmap fails, fall back to buffered I/O
 		// This can happen due to permissions, OS limits, etc.
+		fmt.Fprintf(os.Stderr, "warning: mmap failed for %s: %v, falling back to buffered I/O\n", path, err)
 	}
 
 	// Fall back to traditional buffered I/O
@@ -85,12 +87,8 @@ func extractStringsWithMmap(path string, config Config, printFunc func([]byte, s
 		}
 	}()
 
-	// Get the file size
-	info, err := os.Stat(path)
-	if err != nil {
-		return fmt.Errorf("error getting file info: %w", err)
-	}
-	fileSize := info.Size()
+	// Get the file size from the mmap reader (avoids redundant syscall)
+	fileSize := int64(reader.Len())
 
 	// Read the entire file into memory
 	// Note: mmap.ReaderAt implements ReadAt, we need to read into a slice
@@ -147,36 +145,18 @@ func extractUTF8AwareFromBytes(data []byte, filename string, config Config, prin
 
 		// Check if this is the start of a UTF-8 sequence
 		if b >= 0x80 {
-			// Multi-byte UTF-8 sequence
-			seqLen := 0
-			if b&0xE0 == 0xC0 {
-				seqLen = 2
-			} else if b&0xF0 == 0xE0 {
-				seqLen = 3
-			} else if b&0xF8 == 0xF0 {
-				seqLen = 4
-			}
+			// Decode the UTF-8 rune using standard library
+			r, size := utf8.DecodeRune(data[i:])
 
-			// Validate we have enough bytes
-			if seqLen > 0 && i+seqLen <= len(data) {
-				// Validate continuation bytes
-				valid := true
-				for j := 1; j < seqLen; j++ {
-					if data[i+j]&0xC0 != 0x80 {
-						valid = false
-						break
-					}
+			// Check if the rune is valid (not replacement character due to invalid UTF-8)
+			if r != utf8.RuneError || size == 1 {
+				// Valid UTF-8 sequence - add to current string
+				if len(currentString) == 0 {
+					startOffset = int64(i)
 				}
-
-				if valid {
-					// Valid UTF-8 sequence - add to current string
-					if len(currentString) == 0 {
-						startOffset = int64(i)
-					}
-					currentString = append(currentString, data[i:i+seqLen]...)
-					i += seqLen
-					continue
-				}
+				currentString = append(currentString, data[i:i+size]...)
+				i += size
+				continue
 			}
 
 			// Invalid UTF-8 - treat as non-printable
