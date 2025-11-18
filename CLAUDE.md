@@ -195,7 +195,7 @@ The project uses GitHub Actions for continuous integration and automated release
 3. **fuzz-summary** - Aggregates results
 
 **Fuzz Time by Trigger:**
-- Pull Requests: 2 minutes per target (quick smoke test)
+- Pull Requests: 3 minutes per target (quick smoke test)
 - Scheduled: 1 hour per target (deep testing)
 - Manual: Configurable (default 10 minutes)
 
