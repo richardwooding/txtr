@@ -12,6 +12,18 @@ import (
 	"unicode/utf8"
 )
 
+// ColorMode specifies when to use colored output.
+type ColorMode int
+
+const (
+	// ColorAuto automatically detects if output is a TTY.
+	ColorAuto ColorMode = iota
+	// ColorAlways forces colored output regardless of TTY.
+	ColorAlways
+	// ColorNever disables colored output.
+	ColorNever
+)
+
 // Config holds the configuration for string extraction
 type Config struct {
 	MinLength            int
@@ -19,12 +31,13 @@ type Config struct {
 	Radix                string
 	PrintOffset          bool
 	Encoding             string
-	Unicode              string // UTF-8 handling mode: default/invalid/locale/escape/hex/highlight
+	Unicode              string    // UTF-8 handling mode: default/invalid/locale/escape/hex/highlight
 	OutputSeparator      string
 	IncludeAllWhitespace bool
-	ScanAll              bool   // Scan entire file
-	ScanDataOnly         bool   // Scan only data sections (requires binary format detection)
-	TargetFormat         string // Target binary format: elf/pe/macho/binary
+	ScanAll              bool      // Scan entire file
+	ScanDataOnly         bool      // Scan only data sections (requires binary format detection)
+	TargetFormat         string    // Target binary format: elf/pe/macho/binary
+	ColorMode            ColorMode // When to use colored output
 }
 
 // ExtractStrings reads from reader and extracts printable strings
