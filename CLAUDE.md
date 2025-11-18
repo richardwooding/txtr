@@ -921,39 +921,40 @@ The `-m/--match`, `-M/--exclude`, and `-i/--ignore-case` flags enable regex-base
      - Checks match patterns (if any defined, at least one must match)
      - Returns true if no patterns defined (no filtering)
 
-2. **Config fields** (internal/extractor/extractor.go:42-43):
+2. **Config fields** (internal/extractor/extractor.go):
    - `MatchPatterns []*regexp.Regexp` - Inclusion filter
    - `ExcludePatterns []*regexp.Regexp` - Exclusion filter (blacklist)
 
-3. **CLI flags** (cmd/txtr/main.go:42-44):
+3. **CLI flags** (cmd/txtr/main.go):
    - `MatchPatterns []string` - Can be specified multiple times
    - `ExcludePatterns []string` - Can be specified multiple times
    - `IgnoreCase bool` - Applies to both match and exclude
 
-4. **Pattern compilation** (cmd/txtr/main.go:131-149):
+4. **Pattern compilation** (cmd/txtr/main.go):
    - Compiles patterns before config creation
    - Exits with error on invalid regex (clear error message with pattern number)
 
 5. **Integration points** (internal/extractor/extractor.go):
-   - `extractASCII()` - line 84, 100
-   - `extractUTF8Aware()` - line 123, 143, 201, 209
-   - `extractUTF16()` - line 234, 266
-   - `extractUTF32()` - line 290, 310
-   - `extractASCIIFromBytes()` - line 407, 415
-   - `extractUTF16FromBytes()` - line 436, 444
-   - `extractUTF32FromBytes()` - line 465, 473
+   - `extractASCII()` - 2 call sites
+   - `extractUTF8Aware()` - 4 call sites
+   - `extractUTF16()` - 2 call sites
+   - `extractUTF32()` - 2 call sites
+   - `extractASCIIFromBytes()` - 2 call sites
+   - `extractUTF16FromBytes()` - 2 call sites
+   - `extractUTF32FromBytes()` - 2 call sites
 
 ### Testing
 
-**Unit Tests** (internal/extractor/filter_test.go - 315 lines):
+**Unit Tests** (internal/extractor/filter_test.go):
 - `TestCompilePatterns` - 8 test cases covering valid/invalid patterns
 - `TestCompilePatternsIgnoreCase` - Case-sensitive vs case-insensitive behavior
 - `TestShouldPrintString` - 14 test cases covering all filtering logic combinations
 - `TestShouldPrintStringSpecialPatterns` - 6 common patterns (URL, email, IP, etc.)
 
-**Fuzz Test** (internal/extractor/fuzz_test.go:346-471 - 126 lines):
+**Fuzz Test** (internal/extractor/fuzz_test.go):
 - `FuzzFilterPatterns` - Tests random inputs with ReDoS protection
-- Seed corpus: 10 files with common patterns
+- Seed corpus: 5 files with common patterns (email, URL, IP, error, exclude)
+- In-code seed data: 10 f.Add() calls covering additional edge cases
 - Invariants:
   - No panics during filtering
   - Deterministic behavior (same input = same result)
@@ -961,7 +962,7 @@ The `-m/--match`, `-M/--exclude`, and `-i/--ignore-case` flags enable regex-base
   - 1-second timeout protection against ReDoS attacks
 - Execution rate: ~150K-280K execs/sec
 
-**CI/CD Integration** (.github/workflows/fuzz.yml:36):
+**CI/CD Integration** (.github/workflows/fuzz.yml):
 - Added `FuzzFilterPatterns` to matrix (9 total fuzz targets)
 - Runs on PRs (2min), daily (1hr), and manual dispatch
 
