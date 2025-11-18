@@ -3,8 +3,11 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
+	"runtime"
+	"sync"
 
 	"github.com/alecthomas/kong"
 	"github.com/richardwooding/txtr/internal/binary"
@@ -35,9 +38,33 @@ type CLI struct {
 	TargetFormat         string   `short:"T" name:"target" enum:"elf,pe,macho,binary," default:"" help:"Specify binary format (elf/pe/macho/binary)"`
 	JSON                 bool     `short:"j" name:"json" help:"Output results in JSON format for automation"`
 	Color                string   `name:"color" enum:"auto,always,never," default:"auto" help:"When to use colored output (auto/always/never)"`
+	Parallel             int      `short:"P" name:"parallel" default:"0" help:"Number of parallel workers (0=auto-detect CPUs, 1=sequential)"`
 	Version              bool     `short:"v" name:"version" help:"Display version information"`
 	VersionAlt           bool     `short:"V" hidden:"" help:"Display version information (alias)"`
 	Files                []string `arg:"" optional:"" name:"file" help:"Files to extract strings from" type:"path"`
+}
+
+// job represents a file processing job with its position in the input list
+type job struct {
+	filename string
+	index    int
+}
+
+// result represents the output from processing a file
+type result struct {
+	index  int
+	output string
+	err    error
+}
+
+// jsonFileResult represents the result from processing a file for JSON output
+type jsonFileResult struct {
+	index    int
+	filename string
+	format   string
+	sections []string
+	strings  []printer.StringResult
+	err      error
 }
 
 func main() {
@@ -114,15 +141,24 @@ func main() {
 		ColorMode:            colorMode,
 	}
 
+	// Determine number of parallel workers
+	workers := cli.Parallel
+	if workers == 0 {
+		workers = runtime.NumCPU()
+	}
+
 	// Process files or stdin
 	if cli.JSON {
 		// JSON output mode
-		processWithJSON(cli.Files, config)
+		processWithJSON(cli.Files, workers, config)
 	} else if len(cli.Files) == 0 {
 		// Read from stdin
 		extractor.ExtractStrings(os.Stdin, "", config, printer.PrintString)
+	} else if len(cli.Files) > 1 && workers > 1 {
+		// Process multiple files in parallel
+		processFilesParallel(cli.Files, workers, config)
 	} else {
-		// Process each file
+		// Process each file sequentially (single file or workers=1)
 		for _, filename := range cli.Files {
 			if config.ScanDataOnly {
 				// Parse binary and extract from data sections only
@@ -144,36 +180,43 @@ func main() {
 }
 
 // processWithJSON processes files or stdin with JSON output
-func processWithJSON(files []string, config extractor.Config) {
-	jsonPrinter := printer.NewJSONPrinter(config, os.Stdout)
+// Supports parallel processing for multiple files with automatic error handling
+func processWithJSON(files []string, workers int, config extractor.Config) {
+	var jsonPrinter *printer.JSONPrinter
 
 	if len(files) == 0 {
 		// Read from stdin
+		jsonPrinter = printer.NewJSONPrinter(config, os.Stdout)
 		jsonPrinter.SetFileInfo("", "", nil)
 		extractor.ExtractStrings(os.Stdin, "", config, jsonPrinter.PrintString)
+	} else if len(files) > 1 && workers > 1 {
+		// Process multiple files in parallel
+		jsonPrinter = processFilesParallelJSON(files, workers, config)
 	} else {
-		// For JSON output with multiple files, we process only the first file
-		// This matches the behavior of the issue description
-		filename := files[0]
+		// Process files sequentially (single file or workers=1)
+		jsonPrinter = printer.NewJSONPrinter(config, os.Stdout)
 
-		if config.ScanDataOnly {
-			// Parse binary and extract from data sections
-			processFileWithBinaryParsingJSON(filename, config, jsonPrinter)
-		} else {
-			// Regular full-file scanning
-			file, err := os.Open(filename)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
-				os.Exit(1)
-			}
-			defer func() {
+		for _, filename := range files {
+			if config.ScanDataOnly {
+				// Parse binary and extract from data sections
+				processFileWithBinaryParsingJSON(filename, config, jsonPrinter)
+			} else {
+				// Regular full-file scanning
+				file, err := os.Open(filename)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
+					// Add error result to JSON
+					jsonPrinter.AddFileResult(filename, "", nil, nil, err)
+					continue
+				}
+
+				jsonPrinter.SetFileInfo(filename, "", nil)
+				extractor.ExtractStrings(file, filename, config, jsonPrinter.PrintString)
+
 				if err := file.Close(); err != nil {
 					fmt.Fprintf(os.Stderr, "strings: %s: error closing file: %v\n", filename, err)
 				}
-			}()
-
-			jsonPrinter.SetFileInfo(filename, "", nil)
-			extractor.ExtractStrings(file, filename, config, jsonPrinter.PrintString)
+			}
 		}
 	}
 
@@ -336,4 +379,349 @@ func processFileWithBinaryParsing(filename string, config extractor.Config) {
 	for _, section := range sections {
 		extractor.ExtractFromSection(section.Data, section.Name, section.Offset, filename, config, printer.PrintString)
 	}
+}
+
+// processFilesParallel processes multiple files in parallel using a worker pool
+func processFilesParallel(filenames []string, workers int, config extractor.Config) {
+	// Create channels for jobs and results
+	jobs := make(chan job, len(filenames))
+	results := make(chan result, len(filenames))
+
+	// Start worker goroutines
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range jobs {
+				// Create a buffer to capture output for this file
+				var buf bytes.Buffer
+
+				// Create a print function that writes to the buffer
+				printFunc := func(str []byte, filename string, offset int64, cfg extractor.Config) {
+					printer.PrintStringToWriter(&buf, str, filename, offset, cfg)
+				}
+
+				// Process the file
+				var err error
+				if config.ScanDataOnly {
+					err = processFileWithBinaryParsingToWriter(&buf, j.filename, config)
+				} else {
+					file, openErr := os.Open(j.filename)
+					if openErr != nil {
+						results <- result{index: j.index, output: "", err: openErr}
+						continue
+					}
+					extractor.ExtractStrings(file, j.filename, config, printFunc)
+					if closeErr := file.Close(); closeErr != nil {
+						fmt.Fprintf(os.Stderr, "strings: %s: error closing file: %v\n", j.filename, closeErr)
+					}
+				}
+
+				// Send result
+				results <- result{index: j.index, output: buf.String(), err: err}
+			}
+		}()
+	}
+
+	// Send jobs
+	for i, filename := range filenames {
+		jobs <- job{filename: filename, index: i}
+	}
+	close(jobs)
+
+	// Close results channel after all workers are done
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Collect results in order
+	outputs := make([]result, len(filenames))
+	for r := range results {
+		outputs[r.index] = r
+	}
+
+	// Print results in order
+	for _, r := range outputs {
+		if r.err != nil {
+			fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filenames[r.index], r.err)
+			continue
+		}
+		fmt.Print(r.output)
+	}
+}
+
+// processFileWithBinaryParsingToWriter handles binary parsing and writes output to a buffer
+func processFileWithBinaryParsingToWriter(buf *bytes.Buffer, filename string, config extractor.Config) error {
+	// Create a print function that writes to the buffer
+	printFunc := func(str []byte, fname string, offset int64, cfg extractor.Config) {
+		printer.PrintStringToWriter(buf, str, fname, offset, cfg)
+	}
+
+	// Determine format
+	var format binary.Format
+	var err error
+
+	if config.TargetFormat != "" && config.TargetFormat != "binary" {
+		// User specified a format
+		switch config.TargetFormat {
+		case "elf":
+			format = binary.FormatELF
+		case "pe":
+			format = binary.FormatPE
+		case "macho":
+			format = binary.FormatMachO
+		default:
+			format = binary.FormatRaw
+		}
+	} else {
+		// Auto-detect format
+		format, err = binary.DetectFormat(filename)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Parse binary to get sections
+	sections, err := binary.ParseBinary(filename, format)
+	if err != nil {
+		// Fall back to regular scanning if parsing fails
+		file, openErr := os.Open(filename)
+		if openErr != nil {
+			return openErr
+		}
+		defer func() {
+			if closeErr := file.Close(); closeErr != nil {
+				fmt.Fprintf(os.Stderr, "strings: %s: error closing file: %v\n", filename, closeErr)
+			}
+		}()
+
+		extractor.ExtractStrings(file, filename, config, printFunc)
+		return nil
+	}
+
+	// If no sections found (raw binary), scan the whole file
+	if len(sections) == 0 {
+		file, openErr := os.Open(filename)
+		if openErr != nil {
+			return openErr
+		}
+		defer func() {
+			if closeErr := file.Close(); closeErr != nil {
+				fmt.Fprintf(os.Stderr, "strings: %s: error closing file: %v\n", filename, closeErr)
+			}
+		}()
+
+		extractor.ExtractStrings(file, filename, config, printFunc)
+		return nil
+	}
+
+	// Extract strings from each data section
+	for _, section := range sections {
+		extractor.ExtractFromSection(section.Data, section.Name, section.Offset, filename, config, printFunc)
+	}
+	return nil
+}
+
+// processFilesParallelJSON processes multiple files in parallel for JSON output
+func processFilesParallelJSON(filenames []string, workers int, config extractor.Config) *printer.JSONPrinter {
+	// Create channels for jobs and results
+	jobs := make(chan job, len(filenames))
+	results := make(chan jsonFileResult, len(filenames))
+
+	// Start worker goroutines
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range jobs {
+				// Create a temporary JSON printer for this file
+				var buf bytes.Buffer
+				tempPrinter := printer.NewJSONPrinter(config, &buf)
+
+				var format string
+				var sections []string
+				var strings []printer.StringResult
+				var err error
+
+				if config.ScanDataOnly {
+					// Process with binary parsing
+					format, sections, strings, err = processFileForJSON(j.filename, config)
+				} else {
+					// Regular full-file scanning
+					file, openErr := os.Open(j.filename)
+					if openErr != nil {
+						results <- jsonFileResult{
+							index:    j.index,
+							filename: j.filename,
+							err:      openErr,
+						}
+						continue
+					}
+
+					tempPrinter.SetFileInfo(j.filename, "", nil)
+					extractor.ExtractStrings(file, j.filename, config, tempPrinter.PrintString)
+
+					if closeErr := file.Close(); closeErr != nil {
+						fmt.Fprintf(os.Stderr, "strings: %s: error closing file: %v\n", j.filename, closeErr)
+					}
+
+					// Get the strings from tempPrinter
+					tempPrinter.FinalizeCurrentFile()
+					if len(tempPrinter.FileResults) > 0 {
+						fileRes := tempPrinter.FileResults[0]
+						strings = fileRes.Strings
+						format = fileRes.Format
+						sections = fileRes.Sections
+					}
+				}
+
+				// Send result (ensure strings is never nil)
+				if strings == nil {
+					strings = make([]printer.StringResult, 0)
+				}
+				results <- jsonFileResult{
+					index:    j.index,
+					filename: j.filename,
+					format:   format,
+					sections: sections,
+					strings:  strings,
+					err:      err,
+				}
+			}
+		}()
+	}
+
+	// Send jobs
+	for i, filename := range filenames {
+		jobs <- job{filename: filename, index: i}
+	}
+	close(jobs)
+
+	// Close results channel after all workers are done
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Collect results in order
+	outputs := make([]jsonFileResult, len(filenames))
+	for r := range results {
+		outputs[r.index] = r
+	}
+
+	// Build final JSON output
+	jsonPrinter := printer.NewJSONPrinter(config, os.Stdout)
+	for _, r := range outputs {
+		if r.err != nil {
+			// Print error to stderr as well
+			fmt.Fprintf(os.Stderr, "strings: %s: %v\n", r.filename, r.err)
+		}
+		// Add file result (with error if present)
+		jsonPrinter.AddFileResult(r.filename, r.format, r.sections, r.strings, r.err)
+	}
+
+	return jsonPrinter
+}
+
+// processFileForJSON processes a single file with binary parsing for JSON output
+func processFileForJSON(filename string, config extractor.Config) (string, []string, []printer.StringResult, error) {
+	// Determine format
+	var format binary.Format
+	var err error
+
+	if config.TargetFormat != "" && config.TargetFormat != "binary" {
+		switch config.TargetFormat {
+		case "elf":
+			format = binary.FormatELF
+		case "pe":
+			format = binary.FormatPE
+		case "macho":
+			format = binary.FormatMachO
+		default:
+			format = binary.FormatRaw
+		}
+	} else {
+		format, err = binary.DetectFormat(filename)
+		if err != nil {
+			return "", nil, nil, err
+		}
+	}
+
+	// Parse binary to get sections
+	sections, err := binary.ParseBinary(filename, format)
+	if err != nil {
+		// Fall back to regular scanning
+		file, openErr := os.Open(filename)
+		if openErr != nil {
+			return "", nil, nil, openErr
+		}
+		defer func() {
+			if err := file.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "strings: %s: error closing file: %v\n", filename, err)
+			}
+		}()
+
+		var buf bytes.Buffer
+		tempPrinter := printer.NewJSONPrinter(config, &buf)
+		tempPrinter.SetFileInfo(filename, format.String(), nil)
+		extractor.ExtractStrings(file, filename, config, tempPrinter.PrintString)
+		tempPrinter.FinalizeCurrentFile()
+
+		if len(tempPrinter.FileResults) > 0 {
+			fileRes := tempPrinter.FileResults[0]
+			return fileRes.Format, fileRes.Sections, fileRes.Strings, nil
+		}
+		return format.String(), nil, nil, nil
+	}
+
+	// Collect section names
+	sectionNames := make([]string, len(sections))
+	for i, section := range sections {
+		sectionNames[i] = section.Name
+	}
+
+	// If no sections found, scan whole file
+	if len(sections) == 0 {
+		file, openErr := os.Open(filename)
+		if openErr != nil {
+			return "", nil, nil, openErr
+		}
+		defer func() {
+			if err := file.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "strings: %s: error closing file: %v\n", filename, err)
+			}
+		}()
+
+		var buf bytes.Buffer
+		tempPrinter := printer.NewJSONPrinter(config, &buf)
+		tempPrinter.SetFileInfo(filename, format.String(), sectionNames)
+		extractor.ExtractStrings(file, filename, config, tempPrinter.PrintString)
+		tempPrinter.FinalizeCurrentFile()
+
+		if len(tempPrinter.FileResults) > 0 {
+			fileRes := tempPrinter.FileResults[0]
+			return fileRes.Format, fileRes.Sections, fileRes.Strings, nil
+		}
+		return format.String(), sectionNames, nil, nil
+	}
+
+	// Extract strings from data sections
+	var buf bytes.Buffer
+	tempPrinter := printer.NewJSONPrinter(config, &buf)
+	tempPrinter.SetFileInfo(filename, format.String(), sectionNames)
+
+	for _, section := range sections {
+		extractor.ExtractFromSection(section.Data, section.Name, section.Offset, filename, config, tempPrinter.PrintString)
+	}
+
+	tempPrinter.FinalizeCurrentFile()
+	if len(tempPrinter.FileResults) > 0 {
+		fileRes := tempPrinter.FileResults[0]
+		return fileRes.Format, fileRes.Sections, fileRes.Strings, nil
+	}
+
+	return format.String(), sectionNames, nil, nil
 }

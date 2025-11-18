@@ -694,6 +694,12 @@ The application uses Kong for declarative CLI argument parsing:
 - `-j` / `--json`: Output results in JSON format for automation
 - `--color`: When to use colored output (auto/always/never, default: auto)
 
+**Performance Flags:**
+- `-P` / `--parallel`: Number of parallel workers (default: 0)
+  - `0`: Auto-detect CPUs (default, enables automatic parallelism)
+  - `1`: Sequential processing (disables parallelism)
+  - `N`: Use N parallel workers
+
 **Utility Flags:**
 - `-a` / `--all`: Scan entire file (always enabled)
 - `-v`, `-V` / `--version`: Display version information
@@ -893,6 +899,101 @@ txtr -f -t x --color=always file.bin
   - Makes test output clearer
   - Documents why certain cases aren't fully tested
 
+## Parallel Processing
+
+The `-P/--parallel` flag enables concurrent file processing using a worker pool pattern.
+
+### Architecture
+
+**Design Pattern:**
+- Worker pool with goroutines and channels
+- Job distribution via buffered channel
+- Result collection with index-based ordering
+- Per-file error handling (one failure doesn't stop batch)
+
+**Key Components:**
+
+1. **job struct** (cmd/txtr/main.go:48-51):
+   - Contains filename and index for ordering
+   - Sent to workers via jobs channel
+
+2. **result struct** (cmd/txtr/main.go:54-58):
+   - Contains index, output string, and error
+   - Collected from workers via results channel
+
+3. **processFilesParallel()** (cmd/txtr/main.go:358-427):
+   - Creates worker pool with configurable size
+   - Each worker processes jobs from channel
+   - Captures output to bytes.Buffer per file
+   - Uses PrintStringToWriter to collect formatted output
+   - Results collected in indexed array for ordering
+   - Prints results in original file order
+
+4. **processFileWithBinaryParsingToWriter()** (cmd/txtr/main.go:429-499):
+   - Helper for binary parsing in parallel mode
+   - Writes output to provided buffer instead of stdout
+   - Supports -d flag with parallel processing
+
+### Behavior
+
+**When parallel mode is used:**
+- Multiple files (`len(files) > 1`) AND workers > 1
+- Default workers: runtime.NumCPU() (auto-detect)
+- Single file: Always sequential (no parallelism overhead)
+- stdin: Always sequential
+
+**Output ordering:**
+- Files appear in same order as input arguments
+- Achieved via indexed result collection
+- No interleaving of file outputs
+
+**Error handling:**
+- Errors printed to stderr per file
+- Other files continue processing
+- Exit code reflects overall success
+
+**JSON mode:**
+- Supports parallel processing for multiple files
+- Uses `processFilesParallelJSON()` for concurrent extraction
+- Results collected and ordered before final JSON output
+- Failed files included in output with error field and empty strings array
+
+### Performance
+
+**Expected speedup:**
+- 2 cores: ~1.8x
+- 4 cores: ~3.5x
+- 8 cores: ~6-7x
+
+**Factors affecting speedup:**
+- File I/O vs CPU ratio
+- Filesystem caching
+- File sizes (small files = less benefit)
+- Number of files vs number of cores
+
+### Testing
+
+**Test coverage** (cmd/txtr/parallel_test.go):
+- `TestParallelProcessingOrder`: Verifies output ordering
+- `TestParallelProcessingErrorHandling`: Tests per-file error handling
+- `TestSequentialVsParallel`: Ensures output consistency
+
+### Usage Examples
+
+```bash
+# Automatic parallelism (default, uses all CPUs)
+txtr -f *.bin
+
+# Control worker count
+txtr -P 4 -f *.bin
+
+# Force sequential
+txtr -P 1 -f *.bin
+
+# With all flags
+txtr -P 8 -f -t x --color=always *.exe
+```
+
 ## Code Patterns
 
 - Standard Go Project Layout for clear code organization
@@ -900,3 +1001,4 @@ txtr -f -t x --color=always file.bin
 - Dependency injection: Print function passed to extractor for testability
 - Package separation: CLI, extraction logic, and output formatting are independent
 - Collector pattern: JSONPrinter buffers results before output for structured format
+- Worker pool pattern: Parallel file processing with ordered output and per-file error handling

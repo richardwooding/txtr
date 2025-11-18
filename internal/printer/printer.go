@@ -4,12 +4,19 @@ package printer
 
 import (
 	"fmt"
+	"io"
+	"os"
 
 	"github.com/richardwooding/txtr/internal/extractor"
 )
 
 // PrintString formats and prints a string with optional filename and offset prefix
 func PrintString(str []byte, filename string, offset int64, config extractor.Config) {
+	PrintStringToWriter(os.Stdout, str, filename, offset, config)
+}
+
+// PrintStringToWriter is like PrintString but writes to a specific io.Writer
+func PrintStringToWriter(w io.Writer, str []byte, filename string, offset int64, config extractor.Config) {
 	// Determine if colors should be used
 	useColor := ShouldUseColor(config.ColorMode)
 
@@ -72,5 +79,9 @@ func PrintString(str []byte, filename string, offset int64, config extractor.Con
 		separator = ColorString(separator, AnsiDim, true)
 	}
 
-	fmt.Printf("%s%s%s", prefix, stringOutput, separator)
+	if _, err := fmt.Fprintf(w, "%s%s%s", prefix, stringOutput, separator); err != nil {
+		// Error writing to writer, but we can't do much about it in this context
+		// The caller should handle writer errors appropriately
+		return
+	}
 }
