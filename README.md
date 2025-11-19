@@ -6,11 +6,37 @@ Extracts printable strings from binary files. Aims to be compatible with GNU str
 
 ## Installation
 
-### Pre-built Binaries (Recommended)
+### Homebrew (Recommended for macOS/Linux)
+
+The easiest way to install `txtr` on macOS and Linux is via Homebrew:
+
+```bash
+# Add the tap and install
+brew install richardwooding/tap/txtr
+
+# Verify installation
+txtr --version
+```
+
+**Update to latest version:**
+```bash
+brew upgrade richardwooding/tap/txtr
+```
+
+**Why Homebrew?**
+- ✅ One command installation
+- ✅ Automatic updates via `brew upgrade`
+- ✅ Multi-platform support (macOS Intel/ARM, Linux)
+- ✅ No manual PATH configuration needed
+- ✅ SHA256 verification built-in
+
+---
+
+### Pre-built Binaries
 
 Download the latest release for your platform from the [GitHub Releases page](https://github.com/richardwooding/txtr/releases).
 
-**Current stable version: v2.0.1**
+**Current stable version: v2.7.2**
 
 Available for:
 - **Linux**: amd64, arm64, armv6, armv7
@@ -21,10 +47,10 @@ Available for:
 **Example (Linux amd64):**
 ```bash
 # Download
-curl -LO https://github.com/richardwooding/txtr/releases/download/v2.0.1/txtr_2.0.1_linux_amd64.tar.gz
+curl -LO https://github.com/richardwooding/txtr/releases/download/v2.7.2/txtr_2.7.2_linux_amd64.tar.gz
 
 # Extract
-tar -xzf txtr_2.0.1_linux_amd64.tar.gz
+tar -xzf txtr_2.7.2_linux_amd64.tar.gz
 
 # Move to PATH
 sudo mv txtr /usr/local/bin/
@@ -36,7 +62,7 @@ txtr --version
 **Verify checksums:**
 ```bash
 # Download checksums
-curl -LO https://github.com/richardwooding/txtr/releases/download/v2.0.1/checksums.txt
+curl -LO https://github.com/richardwooding/txtr/releases/download/v2.7.2/checksums.txt
 
 # Verify (Linux/macOS)
 sha256sum -c checksums.txt 2>&1 | grep OK
@@ -51,7 +77,7 @@ Pull from GitHub Container Registry:
 docker pull ghcr.io/richardwooding/txtr:latest
 
 # Specific version
-docker pull ghcr.io/richardwooding/txtr:v2.0.1
+docker pull ghcr.io/richardwooding/txtr:2.7.2
 
 # Run on a file
 docker run --rm -v $(pwd):/data ghcr.io/richardwooding/txtr:latest /data/file.bin
@@ -71,7 +97,7 @@ For Go developers:
 go install github.com/richardwooding/txtr/cmd/txtr@latest
 
 # Specific version
-go install github.com/richardwooding/txtr/cmd/txtr@v2.0.1
+go install github.com/richardwooding/txtr/cmd/txtr@v2.7.2
 ```
 
 ### Build from Source
@@ -96,9 +122,9 @@ go install ./cmd/txtr
 # Show version information
 txtr --version
 # Output:
-# txtr v2.0.1
-#   commit: cec6729
-#   built: 2025-11-17T12:00:00Z
+# txtr 2.7.2
+#   commit: a1bc7f4
+#   built: 2025-11-19T09:53:52Z
 #   built by: goreleaser
 # GNU strings compatible utility written in Go
 
@@ -415,7 +441,7 @@ txtr/
 
 ## Releases
 
-**Current stable version**: v2.0.1
+**Current stable version**: v2.7.2
 
 Releases are automatically built and published via GitHub Actions when a new git tag is pushed. Each release includes:
 
