@@ -110,3 +110,26 @@ jobs:
             dist/*.tar.gz
             dist/*.zip
           retention-days: 7
+
+  benchmark:
+    name: Benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+
+      - name: Run benchmarks
+        run: set -o pipefail; go test -bench=. -benchmem -benchtime=1s -timeout=10m ./... 2>&1 | tee benchmark.txt
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark.txt
+          retention-days: 30
