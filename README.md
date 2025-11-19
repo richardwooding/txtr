@@ -36,7 +36,7 @@ brew upgrade richardwooding/tap/txtr
 
 Download the latest release for your platform from the [GitHub Releases page](https://github.com/richardwooding/txtr/releases).
 
-**Current stable version: v2.7.2**
+**Current stable version: v2.7.3**
 
 Available for:
 - **Linux**: amd64, arm64, armv6, armv7
@@ -47,10 +47,10 @@ Available for:
 **Example (Linux amd64):**
 ```bash
 # Download
-curl -LO https://github.com/richardwooding/txtr/releases/download/v2.7.2/txtr_2.7.2_linux_amd64.tar.gz
+curl -LO https://github.com/richardwooding/txtr/releases/download/v2.7.3/txtr_2.7.3_linux_amd64.tar.gz
 
 # Extract
-tar -xzf txtr_2.7.2_linux_amd64.tar.gz
+tar -xzf txtr_2.7.3_linux_amd64.tar.gz
 
 # Move to PATH
 sudo mv txtr /usr/local/bin/
@@ -62,7 +62,7 @@ txtr --version
 **Verify checksums:**
 ```bash
 # Download checksums
-curl -LO https://github.com/richardwooding/txtr/releases/download/v2.7.2/checksums.txt
+curl -LO https://github.com/richardwooding/txtr/releases/download/v2.7.3/checksums.txt
 
 # Verify (Linux/macOS)
 sha256sum -c checksums.txt 2>&1 | grep OK
@@ -77,7 +77,7 @@ Pull from GitHub Container Registry:
 docker pull ghcr.io/richardwooding/txtr:latest
 
 # Specific version
-docker pull ghcr.io/richardwooding/txtr:2.7.2
+docker pull ghcr.io/richardwooding/txtr:2.7.3
 
 # Run on a file
 docker run --rm -v $(pwd):/data ghcr.io/richardwooding/txtr:latest /data/file.bin
@@ -97,7 +97,7 @@ For Go developers:
 go install github.com/richardwooding/txtr/cmd/txtr@latest
 
 # Specific version
-go install github.com/richardwooding/txtr/cmd/txtr@v2.7.2
+go install github.com/richardwooding/txtr/cmd/txtr@v2.7.3
 ```
 
 ### Build from Source
@@ -122,9 +122,9 @@ go install ./cmd/txtr
 # Show version information
 txtr --version
 # Output:
-# txtr 2.7.2
-#   commit: a1bc7f4
-#   built: 2025-11-19T09:53:52Z
+# txtr 2.7.3
+#   commit: c6e5681
+#   built: 2025-11-19T12:00:00Z
 #   built by: goreleaser
 # GNU strings compatible utility written in Go
 
@@ -441,7 +441,7 @@ txtr/
 
 ## Releases
 
-**Current stable version**: v2.7.2
+**Current stable version**: v2.7.3
 
 Releases are automatically built and published via GitHub Actions when a new git tag is pushed. Each release includes:
 
