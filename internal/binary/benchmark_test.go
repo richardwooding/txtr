@@ -1,6 +1,7 @@
 package binary
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"

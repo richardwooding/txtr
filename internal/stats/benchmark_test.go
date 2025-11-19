@@ -2,6 +2,7 @@ package stats
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"testing"
 
