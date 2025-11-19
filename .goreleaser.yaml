@@ -122,6 +122,7 @@ brews:
     repository:
       owner: richardwooding
       name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
     directory: Formula
     homepage: "https://github.com/richardwooding/txtr"
     description: "GNU strings clone written in Go - extracts printable strings from binary files"
