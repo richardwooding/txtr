@@ -1,71 +1,10 @@
 package binary
 
 import (
-	"encoding/binary"
 	"os"
-	"path/filepath"
 	"runtime"
 	"testing"
 )
-
-// TestDetectMachOUniversal tests detection of Mach-O universal binaries
-func TestDetectMachOUniversal(t *testing.T) {
-	tests := []struct {
-		name       string
-		magic      uint32
-		wantFormat Format
-	}{
-		{
-			name:       "Universal binary big-endian magic",
-			magic:      0xcafebabe,
-			wantFormat: FormatMachO,
-		},
-		{
-			name:       "Universal binary little-endian magic",
-			magic:      0xbebafeca,
-			wantFormat: FormatMachO,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Create temporary file with magic number
-			tmpDir := t.TempDir()
-			tmpFile := filepath.Join(tmpDir, "test.bin")
-
-			f, err := os.Create(tmpFile)
-			if err != nil {
-				t.Fatalf("failed to create test file: %v", err)
-			}
-
-			// Write magic number
-			if err := binary.Write(f, binary.BigEndian, tt.magic); err != nil {
-				t.Fatalf("failed to write magic: %v", err)
-			}
-
-			// Add some padding to make it look more like a real file
-			padding := make([]byte, 100)
-			if _, err := f.Write(padding); err != nil {
-				t.Fatalf("failed to write padding: %v", err)
-			}
-
-			if err := f.Close(); err != nil {
-				t.Fatalf("failed to close file: %v", err)
-			}
-
-			// Test detection
-			format, err := DetectFormat(tmpFile)
-			if err != nil {
-				t.Errorf("DetectFormat() error = %v", err)
-				return
-			}
-
-			if format != tt.wantFormat {
-				t.Errorf("DetectFormat() = %v, want %v", format, tt.wantFormat)
-			}
-		})
-	}
-}
 
 // TestDetectMachOUniversalRealBinary tests with real macOS system binary if available
 func TestDetectMachOUniversalRealBinary(t *testing.T) {

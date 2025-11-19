@@ -6,7 +6,6 @@ import (
 	"debug/elf"
 	"debug/macho"
 	"debug/pe"
-	"encoding/binary"
 	"fmt"
 	"os"
 )
@@ -84,12 +83,11 @@ func DetectFormat(path string) (Format, error) {
 	}
 
 	// Try Mach-O universal binary first
-	// Universal binaries have magic number 0xcafebabe (BE) or 0xbebafeca (LE)
-	var magic uint32
-	if err := binary.Read(file, binary.BigEndian, &magic); err == nil {
-		if magic == 0xcafebabe || magic == 0xbebafeca {
-			return FormatMachO, nil
-		}
+	// Use NewFatFile() instead of magic number check to avoid false positives
+	// (0xcafebabe is shared with Java .class files)
+	if fatFile, err := macho.NewFatFile(file); err == nil {
+		_ = fatFile.Close()
+		return FormatMachO, nil
 	}
 
 	// Reset file pointer
@@ -120,6 +118,9 @@ func ParseELF(path string) ([]Section, error) {
 	if err != nil {
 		return nil, fmt.Errorf("not a valid ELF file: %w", err)
 	}
+	defer func() {
+		_ = elfFile.Close()
+	}()
 
 	var sections []Section
 
@@ -166,6 +167,9 @@ func ParsePE(path string) ([]Section, error) {
 	if err != nil {
 		return nil, fmt.Errorf("not a valid PE file: %w", err)
 	}
+	defer func() {
+		_ = peFile.Close()
+	}()
 
 	var sections []Section
 
@@ -232,14 +236,13 @@ func ParseMachO(path string) ([]Section, error) {
 		return sections
 	}
 
-	// Try universal binary first
-	if _, err := file.Seek(0, 0); err != nil {
-		return nil, fmt.Errorf("failed to seek: %w", err)
-	}
-
+	// Try universal binary first (file is already at position 0 after opening)
 	fatFile, err := macho.NewFatFile(file)
 	if err == nil {
-		// Universal binary - extract from first architecture
+		// Universal binary - extract from first architecture.
+		// Note: The first architecture is typically the native architecture for the build,
+		// but can vary. For x86_64/arm64 universal binaries, the first is often x86_64
+		// for compatibility, but may be arm64 on Apple Silicon native builds.
 		if len(fatFile.Arches) > 0 {
 			sections := extractSections(fatFile.Arches[0].File)
 			_ = fatFile.Close()
@@ -258,6 +261,9 @@ func ParseMachO(path string) ([]Section, error) {
 	if err != nil {
 		return nil, fmt.Errorf("not a valid Mach-O file: %w", err)
 	}
+	defer func() {
+		_ = machoFile.Close()
+	}()
 
 	return extractSections(machoFile), nil
 }
