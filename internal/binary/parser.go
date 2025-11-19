@@ -6,6 +6,7 @@ import (
 	"debug/elf"
 	"debug/macho"
 	"debug/pe"
+	"encoding/binary"
 	"fmt"
 	"os"
 )
@@ -82,7 +83,21 @@ func DetectFormat(path string) (Format, error) {
 		return FormatUnknown, fmt.Errorf("failed to seek: %w", err)
 	}
 
-	// Try Mach-O
+	// Try Mach-O universal binary first
+	// Universal binaries have magic number 0xcafebabe (BE) or 0xbebafeca (LE)
+	var magic uint32
+	if err := binary.Read(file, binary.BigEndian, &magic); err == nil {
+		if magic == 0xcafebabe || magic == 0xbebafeca {
+			return FormatMachO, nil
+		}
+	}
+
+	// Reset file pointer
+	if _, err := file.Seek(0, 0); err != nil {
+		return FormatUnknown, fmt.Errorf("failed to seek: %w", err)
+	}
+
+	// Try Mach-O single architecture
 	if _, err := macho.NewFile(file); err == nil {
 		return FormatMachO, nil
 	}
@@ -185,13 +200,6 @@ func ParseMachO(path string) ([]Section, error) {
 		_ = file.Close()
 	}()
 
-	machoFile, err := macho.NewFile(file)
-	if err != nil {
-		return nil, fmt.Errorf("not a valid Mach-O file: %w", err)
-	}
-
-	var sections []Section
-
 	// Data section patterns to extract
 	dataPatterns := map[string]bool{
 		"__DATA.__data":    true, // Initialized data
@@ -200,26 +208,58 @@ func ParseMachO(path string) ([]Section, error) {
 		"__TEXT.__const":   true, // Constants in text
 	}
 
-	for _, sect := range machoFile.Sections {
-		// Construct full section name (Segment.Section)
-		fullName := sect.Seg + "." + sect.Name
+	// Helper function to extract sections from a Mach-O file
+	extractSections := func(machoFile *macho.File) []Section {
+		var sections []Section
+		for _, sect := range machoFile.Sections {
+			// Construct full section name (Segment.Section)
+			fullName := sect.Seg + "." + sect.Name
 
-		if dataPatterns[fullName] {
-			data, err := sect.Data()
-			if err != nil {
-				continue
+			if dataPatterns[fullName] {
+				data, err := sect.Data()
+				if err != nil {
+					continue
+				}
+
+				sections = append(sections, Section{
+					Name:   fullName,
+					Offset: int64(sect.Offset),
+					Size:   int64(sect.Size),
+					Data:   data,
+				})
 			}
-
-			sections = append(sections, Section{
-				Name:   fullName,
-				Offset: int64(sect.Offset),
-				Size:   int64(sect.Size),
-				Data:   data,
-			})
 		}
+		return sections
 	}
 
-	return sections, nil
+	// Try universal binary first
+	if _, err := file.Seek(0, 0); err != nil {
+		return nil, fmt.Errorf("failed to seek: %w", err)
+	}
+
+	fatFile, err := macho.NewFatFile(file)
+	if err == nil {
+		// Universal binary - extract from first architecture
+		if len(fatFile.Arches) > 0 {
+			sections := extractSections(fatFile.Arches[0].File)
+			_ = fatFile.Close()
+			return sections, nil
+		}
+		_ = fatFile.Close()
+		return nil, fmt.Errorf("universal binary has no architectures")
+	}
+
+	// Not a universal binary, try single architecture
+	if _, err := file.Seek(0, 0); err != nil {
+		return nil, fmt.Errorf("failed to seek: %w", err)
+	}
+
+	machoFile, err := macho.NewFile(file)
+	if err != nil {
+		return nil, fmt.Errorf("not a valid Mach-O file: %w", err)
+	}
+
+	return extractSections(machoFile), nil
 }
 
 // ParseBinary parses a binary file based on the specified format
