@@ -116,6 +116,21 @@ kos:
       org.opencontainers.image.licenses: MIT
       org.opencontainers.image.vendor: Richard Wooding
 
+# Homebrew formula
+brews:
+  -
+    repository:
+      owner: richardwooding
+      name: homebrew-tap
+    directory: Formula
+    homepage: "https://github.com/richardwooding/txtr"
+    description: "GNU strings clone written in Go - extracts printable strings from binary files"
+    license: "MIT"
+    test: |
+      system "#{bin}/txtr --version"
+    install: |
+      bin.install "txtr"
+
 # Checksums
 checksum:
   name_template: 'checksums.txt'
@@ -177,7 +192,7 @@ release:
     go install github.com/richardwooding/txtr/cmd/txtr@{{ .Tag }}
     ```
 
-    #### Homebrew (coming soon)
+    #### Homebrew
     ```bash
     brew install richardwooding/tap/txtr
     ```
