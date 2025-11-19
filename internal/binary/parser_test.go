@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -68,10 +69,15 @@ func TestDetectMachOUniversal(t *testing.T) {
 
 // TestDetectMachOUniversalRealBinary tests with real macOS system binary if available
 func TestDetectMachOUniversalRealBinary(t *testing.T) {
+	// Only run on macOS
+	if runtime.GOOS != "darwin" {
+		t.Skip("skipping test: only runs on macOS (darwin)")
+	}
+
 	// Test with /bin/ls if it exists (macOS system binary)
 	lsPath := "/bin/ls"
 	if _, err := os.Stat(lsPath); os.IsNotExist(err) {
-		t.Skip("skipping test: /bin/ls not found (not on macOS)")
+		t.Skip("skipping test: /bin/ls not found")
 	}
 
 	format, err := DetectFormat(lsPath)
@@ -86,10 +92,15 @@ func TestDetectMachOUniversalRealBinary(t *testing.T) {
 
 // TestParseMachOUniversalRealBinary tests parsing of real universal binary if available
 func TestParseMachOUniversalRealBinary(t *testing.T) {
+	// Only run on macOS
+	if runtime.GOOS != "darwin" {
+		t.Skip("skipping test: only runs on macOS (darwin)")
+	}
+
 	// Test with /bin/ls if it exists (macOS system binary)
 	lsPath := "/bin/ls"
 	if _, err := os.Stat(lsPath); os.IsNotExist(err) {
-		t.Skip("skipping test: /bin/ls not found (not on macOS)")
+		t.Skip("skipping test: /bin/ls not found")
 	}
 
 	sections, err := ParseMachO(lsPath)
