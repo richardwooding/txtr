@@ -2,7 +2,7 @@
 
 A clone of GNU strings utility written in Go 1.25.
 
-Extracts printable strings from binary files. Aims to be compatible with GNU strings. Built with the Kong CLI library and following Standard Go Project Layout.
+Extracts printable strings from binary files. Aims to be compatible with GNU strings.
 
 ## Installation
 
