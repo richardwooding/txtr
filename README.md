@@ -394,6 +394,9 @@ The `--json` flag outputs results in structured JSON format, perfect for automat
 
 ## Performance
 
+Benchmark results from CI are available as downloadable artifacts in the
+[CI workflow runs](https://github.com/richardwooding/txtr/actions/workflows/ci.yml?query=branch%3Amain+is%3Asuccess).
+
 ### Parallel Processing
 
 When processing multiple files, `txtr` automatically uses all available CPU cores to achieve significant speedup:
