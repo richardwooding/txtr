@@ -76,10 +76,10 @@ func TestAdd(t *testing.T) {
 
 func TestDetectEncoding(t *testing.T) {
 	tests := []struct {
-		name     string
-		str      []byte
-		config   extractor.Config
-		want     string
+		name   string
+		str    []byte
+		config extractor.Config
+		want   string
 	}{
 		{
 			name:   "7-bit ASCII",
@@ -192,9 +192,9 @@ func TestUpdateLongest(t *testing.T) {
 
 func TestAvgLength(t *testing.T) {
 	tests := []struct {
-		name   string
-		setup  func(*Statistics)
-		want   float64
+		name  string
+		setup func(*Statistics)
+		want  float64
 	}{
 		{
 			name: "zero strings",
@@ -384,7 +384,7 @@ func TestToJSON(t *testing.T) {
 	}
 
 	// Parse JSON to verify structure
-	var output map[string]interface{}
+	var output map[string]any
 	if err := json.Unmarshal(jsonBytes, &output); err != nil {
 		t.Fatalf("JSON unmarshal error = %v", err)
 	}
@@ -475,8 +475,8 @@ func TestLengthBuckets(t *testing.T) {
 	config := extractor.Config{Encoding: "s"}
 
 	// Add strings in different length buckets
-	s.Add([]byte("short"), "test.bin", 0x1000, config)           // 5 bytes -> 4-10
-	s.Add([]byte("this is medium"), "test.bin", 0x2000, config)  // 14 bytes -> 11-50
+	s.Add([]byte("short"), "test.bin", 0x1000, config)                  // 5 bytes -> 4-10
+	s.Add([]byte("this is medium"), "test.bin", 0x2000, config)         // 14 bytes -> 11-50
 	s.Add([]byte(strings.Repeat("x", 75)), "test.bin", 0x3000, config)  // 75 bytes -> 51-100
 	s.Add([]byte(strings.Repeat("y", 150)), "test.bin", 0x4000, config) // 150 bytes -> 100+
 

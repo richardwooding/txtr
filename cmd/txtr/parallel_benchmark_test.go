@@ -46,7 +46,7 @@ func createBenchmarkFile(t testing.TB, size int) string {
 // createBenchmarkFiles creates multiple temporary files for parallel testing
 func createBenchmarkFiles(t testing.TB, count int, sizePerFile int) []string {
 	files := make([]string, count)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		files[i] = createBenchmarkFile(t, sizePerFile)
 	}
 	return files
@@ -291,13 +291,13 @@ func BenchmarkFileWorkerBalance(b *testing.B) {
 		files   int
 		workers int
 	}{
-		{2, 2},   // 1 file per worker
-		{4, 2},   // 2 files per worker
-		{8, 2},   // 4 files per worker
-		{8, 4},   // 2 files per worker
-		{16, 4},  // 4 files per worker
-		{16, 8},  // 2 files per worker
-		{32, 8},  // 4 files per worker
+		{2, 2},  // 1 file per worker
+		{4, 2},  // 2 files per worker
+		{8, 2},  // 4 files per worker
+		{8, 4},  // 2 files per worker
+		{16, 4}, // 4 files per worker
+		{16, 8}, // 2 files per worker
+		{32, 8}, // 4 files per worker
 	}
 
 	for _, tc := range testCases {

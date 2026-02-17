@@ -18,10 +18,10 @@ func createELFBenchmarkFile(t testing.TB) string {
 	elfData := []byte{
 		// ELF Magic
 		0x7f, 0x45, 0x4c, 0x46, // Magic: 0x7f, 'E', 'L', 'F'
-		0x02,                   // Class: 64-bit
-		0x01,                   // Data: Little-endian
-		0x01,                   // Version: Current
-		0x00,                   // OS/ABI: System V
+		0x02,                                           // Class: 64-bit
+		0x01,                                           // Data: Little-endian
+		0x01,                                           // Version: Current
+		0x00,                                           // OS/ABI: System V
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Padding
 
 		// ELF Header
@@ -129,7 +129,7 @@ func createRandomBinaryFile(t testing.TB, size int) string {
 
 	// Create pseudo-random data
 	data := make([]byte, size)
-	for i := 0; i < size; i++ {
+	for i := range size {
 		data[i] = byte(i % 256)
 	}
 
@@ -253,10 +253,10 @@ func BenchmarkParseBinary_Unknown(b *testing.B) {
 
 func BenchmarkParseBinary_FileSize(b *testing.B) {
 	sizes := []int{
-		1 * 1024,       // 1KB
-		10 * 1024,      // 10KB
-		100 * 1024,     // 100KB
-		1024 * 1024,    // 1MB
+		1 * 1024,         // 1KB
+		10 * 1024,        // 10KB
+		100 * 1024,       // 100KB
+		1024 * 1024,      // 1MB
 		10 * 1024 * 1024, // 10MB
 	}
 

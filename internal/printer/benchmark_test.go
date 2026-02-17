@@ -185,8 +185,8 @@ func BenchmarkPrintString_CustomSeparator(b *testing.B) {
 	filename := "test.bin"
 	offset := int64(1024)
 	config := extractor.Config{
-		MinLength:        4,
-		OutputSeparator:  " | ",
+		MinLength:       4,
+		OutputSeparator: " | ",
 	}
 	writer := io.Discard
 
@@ -219,7 +219,7 @@ func BenchmarkJSONPrinter_Flush(b *testing.B) {
 		b.StopTimer()
 		printer := NewJSONPrinter(config, io.Discard)
 		// Collect 100 strings
-		for j := 0; j < 100; j++ {
+		for j := range 100 {
 			printer.PrintString([]byte("Test String"), "test.bin", int64(j*10), config)
 		}
 		b.StartTimer()
@@ -246,7 +246,7 @@ func benchmarkJSONPrinterWithCount(b *testing.B, count int) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		printer := NewJSONPrinter(config, io.Discard)
-		for j := 0; j < count; j++ {
+		for j := range count {
 			printer.PrintString([]byte("Test String"), "test.bin", int64(j*10), config)
 		}
 		_ = printer.Flush()

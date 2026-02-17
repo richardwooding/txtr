@@ -1,6 +1,6 @@
 # txtr
 
-A clone of GNU strings utility written in Go 1.25.
+A clone of GNU strings utility written in Go 1.26.
 
 Extracts printable strings from binary files. Aims to be compatible with GNU strings.
 
@@ -394,6 +394,9 @@ The `--json` flag outputs results in structured JSON format, perfect for automat
 
 ## Performance
 
+Benchmark results from CI are available as downloadable artifacts in the
+[CI workflow runs](https://github.com/richardwooding/txtr/actions/workflows/ci.yml?query=branch%3Amain+is%3Asuccess).
+
 ### Parallel Processing
 
 When processing multiple files, `txtr` automatically uses all available CPU cores to achieve significant speedup:
@@ -435,7 +438,7 @@ txtr/
 ├── internal/
 │   ├── extractor/      # String extraction logic
 │   └── printer/        # Output formatting
-├── go.mod              # Go 1.25 module definition
+├── go.mod              # Go 1.26 module definition
 └── README.md
 ```
 
@@ -471,10 +474,10 @@ Visit the [Releases page](https://github.com/richardwooding/txtr/releases) to do
 ## Dependencies
 
 **Runtime:**
-- [Kong v1.13.0](https://github.com/alecthomas/kong) - Command-line parser (only external dependency)
+- [Kong v1.14.0](https://github.com/alecthomas/kong) - Command-line parser (only external dependency)
 
 **Build:**
-- Go 1.25
+- Go 1.26
 
 **Features:**
 - ✅ Zero CGO dependencies - fully static binaries

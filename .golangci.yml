@@ -1,7 +1,7 @@
 version: '2'
 
 run:
-  go: '1.25'
+  go: '1.26'
   timeout: 5m
 
 linters:
@@ -13,6 +13,12 @@ linters:
     - unused
     - misspell
     - revive
+  exclusions:
+    rules:
+      - path: "internal/"
+        linters:
+          - revive
+        text: "avoid package names that conflict with Go standard library package names"
 
 issues:
   max-issues-per-linter: 0

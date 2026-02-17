@@ -425,10 +425,8 @@ func processFilesParallel(filenames []string, workers int, config extractor.Conf
 
 	// Start worker goroutines
 	var wg sync.WaitGroup
-	for w := 0; w < workers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range workers {
+		wg.Go(func() {
 			for j := range jobs {
 				// Create a buffer to capture output for this file
 				var buf bytes.Buffer
@@ -450,7 +448,7 @@ func processFilesParallel(filenames []string, workers int, config extractor.Conf
 				// Send result
 				results <- result{index: j.index, output: buf.String(), err: err}
 			}
-		}()
+		})
 	}
 
 	// Send jobs
@@ -561,10 +559,8 @@ func processFilesParallelJSON(filenames []string, workers int, config extractor.
 
 	// Start worker goroutines
 	var wg sync.WaitGroup
-	for w := 0; w < workers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range workers {
+		wg.Go(func() {
 			for j := range jobs {
 				// Create a temporary JSON printer for this file
 				var buf bytes.Buffer
@@ -614,7 +610,7 @@ func processFilesParallelJSON(filenames []string, workers int, config extractor.
 					err:      err,
 				}
 			}
-		}()
+		})
 	}
 
 	// Send jobs
@@ -833,10 +829,8 @@ func processWithStats(files []string, workers int, config extractor.Config, perF
 		var wg sync.WaitGroup
 
 		// Start workers
-		for w := 0; w < workers; w++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+		for range workers {
+			wg.Go(func() {
 				for j := range jobs {
 					s := stats.New(config.MinLength)
 
@@ -863,7 +857,7 @@ func processWithStats(files []string, workers int, config extractor.Config, perF
 
 					results <- s
 				}
-			}()
+			})
 		}
 
 		// Send jobs
