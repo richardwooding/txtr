@@ -190,11 +190,11 @@ func extractUTF8Aware(reader io.Reader, filename string, config Config, printFun
 					case "locale":
 						currentOutput = append(currentOutput, runeBytes...)
 					case "escape":
-						currentOutput = append(currentOutput, fmt.Appendf(nil, "\\u%04x", r)...)
+						currentOutput = fmt.Appendf(currentOutput, "\\u%04x", r)
 					case "hex":
-						currentOutput = append(currentOutput, fmt.Appendf(nil, "<%02x>", r)...)
+						currentOutput = fmt.Appendf(currentOutput, "<%02x>", r)
 					case "highlight":
-						currentOutput = append(currentOutput, fmt.Appendf(nil, "\033[1m\\u%04x\033[0m", r)...)
+						currentOutput = fmt.Appendf(currentOutput, "\033[1m\\u%04x\033[0m", r)
 					default:
 						currentOutput = append(currentOutput, runeBytes...)
 					}

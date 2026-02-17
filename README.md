@@ -471,7 +471,7 @@ Visit the [Releases page](https://github.com/richardwooding/txtr/releases) to do
 ## Dependencies
 
 **Runtime:**
-- [Kong v1.13.0](https://github.com/alecthomas/kong) - Command-line parser (only external dependency)
+- [Kong v1.14.0](https://github.com/alecthomas/kong) - Command-line parser (only external dependency)
 
 **Build:**
 - Go 1.26
