@@ -109,7 +109,7 @@ txtr/
 ## Dependencies
 
 **Runtime:** Kong v1.13.0, golang.org/x/exp/mmap, Go 1.26 stdlib
-**Build:** GoReleaser v2.12.7, Ko (containerized), golangci-lint v2.6.2
+**Build:** GoReleaser v2.12.7, Ko (containerized), golangci-lint v2.9.0
 **Key:** Zero CGO, fully static binaries (~3.8MB)
 
 ## Build Configuration
