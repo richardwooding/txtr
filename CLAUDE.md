@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with this repository.
 
 ## Project Overview
 
-`txtr` is a GNU strings clone written in Go 1.25. Extracts printable strings from binaries with Standard Go Project Layout.
+`txtr` is a GNU strings clone written in Go 1.26. Extracts printable strings from binaries with Standard Go Project Layout.
 
 ## Development Commands
 
@@ -108,7 +108,7 @@ txtr/
 
 ## Dependencies
 
-**Runtime:** Kong v1.13.0, golang.org/x/exp/mmap, Go 1.25 stdlib
+**Runtime:** Kong v1.13.0, golang.org/x/exp/mmap, Go 1.26 stdlib
 **Build:** GoReleaser v2.12.7, Ko (containerized), golangci-lint v2.6.2
 **Key:** Zero CGO, fully static binaries (~3.8MB)
 

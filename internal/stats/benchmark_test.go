@@ -25,7 +25,7 @@ func createBenchmarkStrings(count int) [][]byte {
 		[]byte("192.168.1.1"),
 	}
 
-	for i := 0; i < count; i++ {
+	for i := range count {
 		strings = append(strings, patterns[i%len(patterns)])
 	}
 
@@ -187,7 +187,7 @@ func BenchmarkStatistics_LongestTracking(b *testing.B) {
 
 	// Pre-generate strings of varying lengths
 	strings := make([][]byte, 100)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		length := 10 + (i * 5) // Increasing lengths
 		strings[i] = bytes.Repeat([]byte("A"), length)
 	}
@@ -275,7 +275,7 @@ func BenchmarkStatistics_ParallelAggregation(b *testing.B) {
 				workerStats := make([]*Statistics, workers)
 				stringsPerWorker := len(strings) / workers
 
-				for w := 0; w < workers; w++ {
+				for w := range workers {
 					workerStats[w] = New(4)
 					start := w * stringsPerWorker
 					end := start + stringsPerWorker

@@ -332,7 +332,7 @@ func formatEncodingName(enc string) string {
 
 // ToJSON converts statistics to JSON format
 func (s *Statistics) ToJSON() ([]byte, error) {
-	output := map[string]interface{}{
+	output := map[string]any{
 		"total_strings": s.TotalStrings,
 		"total_bytes":   s.TotalBytes,
 		"min_length":    s.MinLength,
@@ -368,13 +368,13 @@ func (s *Statistics) ToJSON() ([]byte, error) {
 
 	// Add longest strings
 	if len(s.LongestStrings) > 0 {
-		longest := make([]map[string]interface{}, len(s.LongestStrings))
+		longest := make([]map[string]any, len(s.LongestStrings))
 		for i, ls := range s.LongestStrings {
 			preview := ls.Value
 			if len(preview) > 50 {
 				preview = preview[:47] + "..."
 			}
-			longest[i] = map[string]interface{}{
+			longest[i] = map[string]any{
 				"length":     ls.Length,
 				"offset":     ls.Offset,
 				"offset_hex": fmt.Sprintf("0x%x", ls.Offset),

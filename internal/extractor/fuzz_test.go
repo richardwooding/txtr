@@ -23,7 +23,7 @@ func FuzzExtractASCII(f *testing.F) {
 	f.Fuzz(func(t *testing.T, data []byte, minLen int, allow8bit bool) {
 		// Constrain minLen to reasonable range (1-100)
 		if minLen <= 0 || minLen > 100 {
-			minLen = (minLen%100) + 1
+			minLen = (minLen % 100) + 1
 		}
 
 		// Skip extremely large inputs to prevent resource exhaustion
@@ -92,17 +92,17 @@ func FuzzExtractUTF8Aware(f *testing.F) {
 	f.Add([]byte("Hello 世界"), 4)
 	f.Add([]byte("Привет мир"), 4)
 	f.Add([]byte("🌍🌎🌏"), 4)
-	f.Add([]byte("\xc3\x28"), 4)           // Invalid UTF-8
-	f.Add([]byte("\xf0\x28\x8c\xbc"), 4)   // Invalid
-	f.Add([]byte("test\xc0\xaf/"), 4)      // Overlong encoding
-	f.Add([]byte("\xed\xa0\x80"), 4)       // Surrogate
-	f.Add([]byte(""), 4)                    // Empty
+	f.Add([]byte("\xc3\x28"), 4)         // Invalid UTF-8
+	f.Add([]byte("\xf0\x28\x8c\xbc"), 4) // Invalid
+	f.Add([]byte("test\xc0\xaf/"), 4)    // Overlong encoding
+	f.Add([]byte("\xed\xa0\x80"), 4)     // Surrogate
+	f.Add([]byte(""), 4)                 // Empty
 	f.Add([]byte("normal text"), 6)
 
 	f.Fuzz(func(t *testing.T, data []byte, minLen int) {
 		// Constrain minLen
 		if minLen <= 0 || minLen > 100 {
-			minLen = (minLen%100) + 1
+			minLen = (minLen % 100) + 1
 		}
 
 		// Skip large inputs
@@ -127,7 +127,7 @@ func FuzzExtractUTF8Aware(f *testing.F) {
 
 		// Test with timeout to catch infinite loops
 		done := make(chan bool, 1)
-		var panicked interface{}
+		var panicked any
 
 		go func() {
 			defer func() {
@@ -184,7 +184,7 @@ func FuzzExtractUTF16(f *testing.F) {
 	f.Fuzz(func(t *testing.T, data []byte, minLen int, littleEndian bool) {
 		// Constrain minLen
 		if minLen <= 0 || minLen > 100 {
-			minLen = (minLen%100) + 1
+			minLen = (minLen % 100) + 1
 		}
 
 		// Skip large inputs
@@ -207,7 +207,7 @@ func FuzzExtractUTF16(f *testing.F) {
 
 		// Test with timeout (CVE-2020-14040: infinite loop in UTF-16 decoder)
 		done := make(chan bool, 1)
-		var panicked interface{}
+		var panicked any
 
 		go func() {
 			defer func() {
@@ -275,7 +275,7 @@ func FuzzExtractUTF32(f *testing.F) {
 	f.Fuzz(func(t *testing.T, data []byte, minLen int, littleEndian bool) {
 		// Constrain minLen
 		if minLen <= 0 || minLen > 100 {
-			minLen = (minLen%100) + 1
+			minLen = (minLen % 100) + 1
 		}
 
 		// Skip large inputs
@@ -298,7 +298,7 @@ func FuzzExtractUTF32(f *testing.F) {
 
 		// Add timeout (1 second per input) to avoid infinite/hanging test
 		done := make(chan bool, 1)
-		var panicked interface{}
+		var panicked any
 
 		go func() {
 			defer func() {
@@ -347,16 +347,16 @@ func FuzzExtractUTF32(f *testing.F) {
 // FuzzFilterPatterns tests the pattern filtering functionality with random inputs
 func FuzzFilterPatterns(f *testing.F) {
 	// Seed corpus with common use cases
-	f.Add("test@example.com", "\\S+@\\S+", "", false)        // Email pattern
-	f.Add("http://example.com", "https?://\\S+", "", false) // URL pattern
+	f.Add("test@example.com", "\\S+@\\S+", "", false)                            // Email pattern
+	f.Add("http://example.com", "https?://\\S+", "", false)                      // URL pattern
 	f.Add("192.168.1.1", "\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}", "", false) // IP pattern
-	f.Add("ERROR: failed", "(?i)(error|warning|fatal)", "", false) // Error pattern
-	f.Add("debug_symbol", "", "debug.*", false) // Exclude pattern
-	f.Add("test@example.com", "\\S+@\\S+", "spam.*", false) // Match and exclude
-	f.Add("HELLO WORLD", "hello", "", true)  // Case insensitive
-	f.Add("special chars: []{}", "\\[\\]\\{\\}", "", false) // Escaped chars
-	f.Add("unicode: 世界", ".*", "", false) // Unicode
-	f.Add("0xDEADBEEF", "0x[0-9a-fA-F]+", "", false) // Hex pattern
+	f.Add("ERROR: failed", "(?i)(error|warning|fatal)", "", false)               // Error pattern
+	f.Add("debug_symbol", "", "debug.*", false)                                  // Exclude pattern
+	f.Add("test@example.com", "\\S+@\\S+", "spam.*", false)                      // Match and exclude
+	f.Add("HELLO WORLD", "hello", "", true)                                      // Case insensitive
+	f.Add("special chars: []{}", "\\[\\]\\{\\}", "", false)                      // Escaped chars
+	f.Add("unicode: 世界", ".*", "", false)                                        // Unicode
+	f.Add("0xDEADBEEF", "0x[0-9a-fA-F]+", "", false)                             // Hex pattern
 
 	f.Fuzz(func(t *testing.T, input string, matchPattern string, excludePattern string, ignoreCase bool) {
 		// Timeout protection against ReDoS
