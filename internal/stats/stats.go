@@ -11,6 +11,7 @@ import (
 
 	"github.com/richardwooding/txtr/internal/extractor"
 	"github.com/richardwooding/txtr/internal/printer"
+	"github.com/richardwooding/txtr/internal/triage"
 )
 
 // Statistics holds aggregated statistics about extracted strings
@@ -32,6 +33,11 @@ type Statistics struct {
 	EncodingCounts map[string]int
 	LengthBuckets  map[string]int
 
+	// Triage distributions (populated only in --triage mode)
+	CategoryCounts   map[string]int
+	SecretCounts     map[string]int
+	HighEntropyCount int
+
 	// Longest strings
 	LongestStrings []LongestString
 }
@@ -49,6 +55,8 @@ func New(minLength int) *Statistics {
 		MinLength:      minLength,
 		EncodingCounts: make(map[string]int),
 		LengthBuckets:  make(map[string]int),
+		CategoryCounts: make(map[string]int),
+		SecretCounts:   make(map[string]int),
 		LongestStrings: make([]LongestString, 0, 5),
 	}
 }
@@ -88,6 +96,20 @@ func (s *Statistics) Add(str []byte, _ string, offset int64, config extractor.Co
 	// Update length bucket
 	bucket := s.getBucket(length)
 	s.LengthBuckets[bucket]++
+
+	// Triage classification (only when enabled)
+	if config.TriageMode {
+		res := triage.Classify(str, config.MinEntropy)
+		for _, c := range res.Categories {
+			s.CategoryCounts[string(c)]++
+		}
+		for _, sec := range res.Secrets {
+			s.SecretCounts[sec.Rule]++
+		}
+		if res.HighEntropy {
+			s.HighEntropyCount++
+		}
+	}
 }
 
 // detectEncoding classifies the encoding type of a string
@@ -268,6 +290,45 @@ func (s *Statistics) Format(w io.Writer, colorMode extractor.ColorMode) {
 		fmt.Fprintln(w)
 	}
 
+	// Triage summary (categories, secrets, high-entropy)
+	if len(s.CategoryCounts) > 0 || len(s.SecretCounts) > 0 || s.HighEntropyCount > 0 {
+		header := printer.ColorString("Triage summary:", printer.AnsiBold+printer.AnsiCyan, useColor)
+		fmt.Fprintf(w, "  %s\n", header)
+
+		if len(s.SecretCounts) > 0 {
+			rules := make([]string, 0, len(s.SecretCounts))
+			for r := range s.SecretCounts {
+				rules = append(rules, r)
+			}
+			sort.Strings(rules)
+			for _, r := range rules {
+				name := printer.ColorString(r+":", printer.AnsiRed, useColor)
+				count := printer.ColorString(formatNumber(s.SecretCounts[r]), printer.AnsiYellow, useColor)
+				fmt.Fprintf(w, "    %-26s %6s\n", name, count)
+			}
+		}
+
+		if s.HighEntropyCount > 0 {
+			name := printer.ColorString("High-entropy blobs:", printer.AnsiMagenta, useColor)
+			count := printer.ColorString(formatNumber(s.HighEntropyCount), printer.AnsiYellow, useColor)
+			fmt.Fprintf(w, "    %-26s %6s\n", name, count)
+		}
+
+		if len(s.CategoryCounts) > 0 {
+			cats := make([]string, 0, len(s.CategoryCounts))
+			for c := range s.CategoryCounts {
+				cats = append(cats, c)
+			}
+			sort.Strings(cats)
+			for _, c := range cats {
+				name := printer.ColorString(c+":", printer.AnsiCyan, useColor)
+				count := printer.ColorString(formatNumber(s.CategoryCounts[c]), printer.AnsiYellow, useColor)
+				fmt.Fprintf(w, "    %-26s %6s\n", name, count)
+			}
+		}
+		fmt.Fprintln(w)
+	}
+
 	// Longest strings
 	if len(s.LongestStrings) > 0 {
 		header := printer.ColorString("Longest strings:", printer.AnsiBold+printer.AnsiCyan, useColor)
@@ -366,6 +427,17 @@ func (s *Statistics) ToJSON() ([]byte, error) {
 		output["length_distribution"] = s.LengthBuckets
 	}
 
+	// Add triage distributions
+	if len(s.CategoryCounts) > 0 {
+		output["category_distribution"] = s.CategoryCounts
+	}
+	if len(s.SecretCounts) > 0 {
+		output["secret_distribution"] = s.SecretCounts
+	}
+	if s.HighEntropyCount > 0 {
+		output["high_entropy_count"] = s.HighEntropyCount
+	}
+
 	// Add longest strings
 	if len(s.LongestStrings) > 0 {
 		longest := make([]map[string]any, len(s.LongestStrings))
@@ -408,6 +480,15 @@ func (s *Statistics) Merge(other *Statistics) {
 	for bucket, count := range other.LengthBuckets {
 		s.LengthBuckets[bucket] += count
 	}
+
+	// Merge triage distributions
+	for cat, count := range other.CategoryCounts {
+		s.CategoryCounts[cat] += count
+	}
+	for rule, count := range other.SecretCounts {
+		s.SecretCounts[rule] += count
+	}
+	s.HighEntropyCount += other.HighEntropyCount
 
 	// Merge longest strings
 	s.LongestStrings = append(s.LongestStrings, other.LongestStrings...)

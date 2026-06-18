@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/richardwooding/txtr/internal/extractor"
+	"github.com/richardwooding/txtr/internal/triage"
 )
 
 // StringResult represents a single extracted string in JSON format
@@ -20,6 +21,11 @@ type StringResult struct {
 	Length    int    `json:"length"`
 	Encoding  string `json:"encoding"`
 	Section   string `json:"section,omitempty"`
+	// Triage fields (populated only in --triage mode)
+	Entropy     float64                `json:"entropy,omitempty"`
+	Categories  []string               `json:"categories,omitempty"`
+	Secrets     []triage.SecretFinding `json:"secrets,omitempty"`
+	HighEntropy bool                   `json:"high_entropy,omitempty"`
 }
 
 // JSONOutput represents the complete JSON output structure
@@ -95,9 +101,24 @@ func (jp *JSONPrinter) PrintString(str []byte, filename string, offset int64, co
 		Encoding:  getEncodingName(config.Encoding),
 	}
 
-	// Only include filename if PrintFileName is enabled or it's different from stdin
-	if config.PrintFileName && filename != "" {
+	// Include filename when requested, or always when recursing so each archive
+	// member is identified by its virtual path.
+	if (config.PrintFileName || config.Recursive) && filename != "" {
 		result.File = filename
+	}
+
+	// Enrich with triage analysis when enabled.
+	if config.TriageMode {
+		res := triage.Classify(str, config.MinEntropy)
+		if config.SecretsOnly && !res.Interesting() {
+			return
+		}
+		result.Entropy = res.Entropy
+		result.HighEntropy = res.HighEntropy
+		result.Secrets = res.Secrets
+		for _, c := range res.Categories {
+			result.Categories = append(result.Categories, string(c))
+		}
 	}
 
 	jp.currentStrings = append(jp.currentStrings, result)
