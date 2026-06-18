@@ -43,11 +43,14 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Pinned to v2.15.4: newer GoReleaser hard-errors on the deprecated `brews`
+      # config. v2.15.4 still emits the cross-platform Homebrew formula. Revisit
+      # when migrating off `brews` (note: homebrew_casks is macOS-only).
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6.1.0
         with:
           distribution: goreleaser
-          version: '~> v2'
+          version: 'v2.15.4'
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
