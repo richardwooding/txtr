@@ -43,6 +43,12 @@ type Config struct {
 	ExcludePatterns      []*regexp.Regexp // Patterns to exclude (blacklist filter)
 	DisableMmap          bool             // Disable memory-mapped I/O optimization
 	MmapThreshold        int64            // Minimum file size (bytes) for using mmap
+	TriageMode           bool             // Enable security triage (entropy/classification/secrets)
+	SecretsOnly          bool             // In triage mode, only surface secrets/high-entropy strings
+	MinEntropy           float64          // Entropy threshold (bits/byte) for high-entropy flagging
+	Recursive            bool             // Recurse into archives/compressed containers
+	RecurseMaxDepth      int              // Max archive nesting depth (0 = default)
+	RecurseMaxBytes      int64            // Max total decompressed bytes (0 = default, <0 = unlimited)
 }
 
 // ExtractStrings reads from reader and extracts printable strings

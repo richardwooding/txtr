@@ -367,6 +367,51 @@ func BenchmarkPrintString_ConfigComparison(b *testing.B) {
 	}
 }
 
+// Benchmark: Triage output overhead vs plain text output
+//
+// Quantifies the per-string cost of triage classification (entropy +
+// categorization + secret scan) relative to plain string printing, on a
+// representative mix of plain text, classified content, and secrets.
+func BenchmarkComparison_PlainVsTriage(b *testing.B) {
+	// Representative of a real binary: short strings dominate, with a few
+	// classified/secret strings sprinkled in.
+	mix := [][]byte{
+		[]byte("init"), []byte(".text"), []byte("errno"), []byte("%s: %d\n"),
+		[]byte("GLIBC_2.2.5"), []byte("malloc"), []byte("free"), []byte("__stack_chk"),
+		[]byte("the quick brown fox jumps over the lazy dog"),
+		[]byte("https://www.example.com/path/to/resource"),
+		[]byte("192.168.1.1"),
+		[]byte("AKIAIOSFODNN7EXAMPLE"),
+		[]byte("gB7x9K2pQ4rT6yU8wA1zC3vN5mL0jH4dF6sX8wQ"),
+	}
+
+	plainConfig := extractor.Config{MinLength: 4}
+	triageConfig := extractor.Config{MinLength: 4, TriageMode: true, MinEntropy: 4.5, ColorMode: extractor.ColorNever}
+
+	b.Run("PlainText", func(b *testing.B) {
+		var buf bytes.Buffer
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			buf.Reset()
+			for j, str := range mix {
+				PrintStringToWriter(&buf, str, "test.bin", int64(j*64), plainConfig)
+			}
+		}
+	})
+
+	b.Run("Triage", func(b *testing.B) {
+		var buf bytes.Buffer
+		tp := NewTriagePrinter(triageConfig, &buf)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			buf.Reset()
+			for j, str := range mix {
+				tp.PrintString(str, "test.bin", int64(j*64), triageConfig)
+			}
+		}
+	})
+}
+
 // Helper function to format length
 func formatLength(length int) string {
 	switch {

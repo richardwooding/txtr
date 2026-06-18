@@ -251,6 +251,78 @@ Statistics for binary.exe:
 - With filters: "How many email addresses are embedded?"
 - Per-file analysis: Compare statistics across multiple files
 
+### Security Triage
+
+The `--triage` flag turns `txtr` into a first-pass security triage tool. Every extracted string is
+scored for Shannon entropy, classified by content (URL, email, IPv4/IPv6, domain, file path, hex,
+base64, UUID), and scanned for likely secrets (AWS keys, PEM private keys, GitHub/Slack/Stripe
+tokens, Google API keys, JWTs, and generic `key=value` assignments). Each string is printed with
+its highest-priority tag:
+
+```bash
+# Annotate every string with its triage tag
+txtr --triage firmware.bin
+
+# Only surface detected secrets and high-entropy blobs
+txtr --secrets firmware.bin
+
+# Tune the high-entropy threshold (bits/byte, default 4.5)
+txtr --triage --min-entropy 5.0 firmware.bin
+
+# Triage as JSON for CI gates (entropy/categories/secrets per string)
+txtr --triage -j firmware.bin | jq '.files[0].strings[] | select((.secrets|length)>0)'
+
+# Triage rollup in statistics mode
+txtr --triage --stats firmware.bin
+```
+
+```
+[SECRET]   0x001a40 AWS Access Key        AKIAIOSFODNN7EXAMPLE
+[SECRET]   0x002f10 PEM Private Key       -----BEGIN RSA PRIVATE KEY-----
+[HIGH-ENT] 0x004012 entropy=7.8           gB7x9K2pQ4rT6yU8wA1zC3vN5mL0jH...
+[URL]      0x005120 https://c2.example.com/beacon
+[IPv4]     0x006004 10.0.0.5
+```
+
+**Use cases:**
+- Firmware/malware triage: surface embedded credentials, C2 URLs, and packed (high-entropy) blobs
+- CI secret scanning: fail builds when `--triage -j` reports findings in shipped binaries
+- Composition overview: `--triage --stats` shows how many URLs, IPs, and secrets a binary contains
+
+### Archive Recursion
+
+The `--recurse` (`-r`) flag descends into archive and compressed-container files and
+extracts strings from every contained file, rather than scanning the raw (often compressed)
+container bytes. Each string is labelled with a virtual path using `!/` to separate nesting
+levels (e.g. `app.apk!/classes.dex`, `pkg.deb!/data.tar!/usr/bin/htop`).
+
+Supported containers: **zip** (and zip-based `.apk`/`.jar`/`.ipa`/`.aar`), **tar**, **gzip**,
+**bzip2**, **xz**, **zstd**, and **ar** (`.deb`). Nested combinations are recursed automatically.
+
+```bash
+# Pull strings out of every file inside an APK (DEX, resources, native libs)
+txtr -r app.apk
+
+# Triage a Debian package: descends ar -> data.tar.xz -> ELF binaries
+txtr -r --triage pkg.deb
+
+# Scan firmware images, keeping virtual paths for locating findings
+txtr -r -f firmware.tar.gz
+
+# Combine with secrets scanning across a whole archive tree
+txtr -r --secrets app.apk
+
+# JSON with per-member virtual paths
+txtr -r -j pkg.deb | jq '.files[0].strings[] | {file, value}'
+```
+
+Why it matters: an APK or `.deb` stores its real content compressed, so a plain scan only
+sees high-entropy blobs. Recursion exposes the URLs, domains, IPs, and secrets hidden inside.
+
+**Safety:** recursion is bounded against decompression bombs and pathological nesting:
+- `--max-depth` (default 8) limits archive nesting; deeper members are scanned as opaque leaves
+- `--max-decompressed-size` (default 2 GiB, `<0` = unlimited) caps total decompressed bytes per input
+
 ### JSON Output Format
 
 The `--json` flag outputs results in structured JSON format, perfect for automation, CI/CD pipelines, and integration with tools like `jq`:
@@ -324,6 +396,18 @@ The `--json` flag outputs results in structured JSON format, perfect for automat
 - `--stats`: Output statistics summary instead of strings (for analysis and triage)
 - `--stats-per-file`: Show per-file statistics instead of aggregated (requires --stats)
 
+### Security Triage Options
+- `--triage`: Tag each string with entropy, content classification, and detected secrets
+- `--secrets`: Only surface detected secrets and high-entropy strings (implies `--triage`)
+- `--min-entropy=<float>`: Entropy threshold (bits/byte) for high-entropy flagging (default: 4.5)
+- Composable with `-j`/`--json` (adds `entropy`/`categories`/`secrets` fields) and `--stats` (adds a triage rollup)
+
+### Archive Recursion Options
+- `-r`, `--recurse`: Recurse into archives/compressed files (zip/apk/jar/tar/gz/bz2/xz/zst/deb), scanning each contained file
+- `--max-depth=<n>`: Maximum archive nesting depth when recursing (default: 8)
+- `--max-decompressed-size=<bytes>`: Max total decompressed bytes per input, a decompression-bomb guard (default: 2 GiB; `<0` = unlimited)
+- Composes with all output modes (`--triage`, `--secrets`, `--stats`, `-j`); each string is labelled with a `!/`-separated virtual path
+
 ### Pattern Filtering Options
 - `-m <pattern>`, `--match=<pattern>`: Only show strings matching regex pattern (can be specified multiple times for OR logic)
 - `-M <pattern>`, `--exclude=<pattern>`: Exclude strings matching regex pattern (can be specified multiple times)
@@ -375,6 +459,8 @@ The `--json` flag outputs results in structured JSON format, perfect for automat
 - **UTF-8 Unicode Support**: Full UTF-8 multibyte character handling with multiple display modes
 - **Regex Pattern Filtering**: Extract specific patterns (URLs, emails, IPs) or exclude unwanted strings (debug symbols, noise)
 - **Statistics Mode**: Aggregated analysis with encoding distribution, length buckets, and longest strings for quick triage
+- **Security Triage**: Entropy scoring, content classification, and secret detection (`--triage`/`--secrets`) for firmware/malware analysis and CI secret scanning
+- **Archive Recursion**: Descend into zip/apk/tar/gz/bz2/xz/zst/deb containers (`--recurse`) with virtual paths and decompression-bomb guards
 - **Colored Output**: Visual distinction with ANSI colors for filenames, offsets, and string types (auto/always/never)
 - **Memory-Mapped I/O**: Automatic 2x performance boost for files ≥1MB via mmap optimization
 - **Configurable Minimum Length**: Set minimum string length threshold

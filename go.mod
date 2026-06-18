@@ -4,4 +4,8 @@ go 1.26
 
 require github.com/alecthomas/kong v1.15.0
 
-require golang.org/x/exp v0.0.0-20251113190631-e25ba8c21ef6
+require (
+	github.com/klauspost/compress v1.18.6
+	github.com/ulikunitz/xz v0.5.15
+	golang.org/x/exp v0.0.0-20251113190631-e25ba8c21ef6
+)

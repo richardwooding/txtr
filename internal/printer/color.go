@@ -13,6 +13,8 @@ const (
 	AnsiReset = "\x1b[0m"
 	// AnsiCyan sets text color to cyan.
 	AnsiCyan = "\x1b[36m"
+	// AnsiRed sets text color to red.
+	AnsiRed = "\x1b[31m"
 	// AnsiYellow sets text color to yellow.
 	AnsiYellow = "\x1b[33m"
 	// AnsiGreen sets text color to green.

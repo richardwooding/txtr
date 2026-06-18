@@ -87,18 +87,21 @@ jobs:
           go-version: stable
           cache: true
 
+      # Pinned: GoReleaser > v2.15.x turns the `brews` deprecation into a hard
+      # `check` error. Pinned to v2.15.4 (keeps it a warning, still emits the
+      # cross-platform Homebrew formula) until the config migrates off `brews`.
       - name: Check GoReleaser config
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
-          version: '~> v2'
+          version: 'v2.15.4'
           args: check
 
       - name: Test GoReleaser build
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
-          version: '~> v2'
+          version: 'v2.15.4'
           args: build --snapshot --clean
 
       - name: Upload snapshot artifacts
