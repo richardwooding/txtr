@@ -9,9 +9,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/richardwooding/triage"
 	"github.com/richardwooding/txtr/internal/extractor"
 	"github.com/richardwooding/txtr/internal/printer"
-	"github.com/richardwooding/txtr/internal/triage"
 )
 
 // Statistics holds aggregated statistics about extracted strings

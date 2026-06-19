@@ -5,8 +5,8 @@ import (
 	"io"
 	"os"
 
+	"github.com/richardwooding/triage"
 	"github.com/richardwooding/txtr/internal/extractor"
-	"github.com/richardwooding/txtr/internal/triage"
 )
 
 // triagePreviewLimit caps how many bytes of a string are shown in the preview
