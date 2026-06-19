@@ -2,6 +2,7 @@ package extractor
 
 import (
 	"bytes"
+	"context"
 	"testing"
 )
 
@@ -86,7 +87,9 @@ func TestExtractStrings(t *testing.T) {
 			}
 
 			bufReader := bytes.NewReader(tt.input)
-			ExtractStrings(bufReader, "", config, printFunc)
+			if err := ExtractStrings(context.Background(), bufReader, "", config, printFunc); err != nil {
+				t.Fatalf("ExtractStrings: %v", err)
+			}
 
 			if len(found) != len(tt.expected) {
 				t.Errorf("found %d strings, expected %d", len(found), len(tt.expected))

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -54,7 +55,7 @@ func TestParallelProcessingOrder(t *testing.T) {
 	os.Stdout = w
 
 	// Run parallel processing
-	processFilesParallel(filePaths, 2, config)
+	processFilesParallel(context.Background(), filePaths, 2, config)
 
 	if err := w.Close(); err != nil {
 		t.Fatalf("Failed to close pipe writer: %v", err)
@@ -112,7 +113,7 @@ func TestParallelProcessingErrorHandling(t *testing.T) {
 	os.Stderr = w
 
 	// Run parallel processing
-	processFilesParallel([]string{file1, file2, file3}, 2, config)
+	processFilesParallel(context.Background(), []string{file1, file2, file3}, 2, config)
 
 	if err := w.Close(); err != nil {
 		t.Fatalf("Failed to close pipe writer: %v", err)
@@ -166,13 +167,15 @@ func TestSequentialVsParallel(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to open file %s: %v", filename, err)
 		}
-		extractor.ExtractStrings(file, filename, config, func(str []byte, fname string, _ int64, cfg extractor.Config) {
+		if err := extractor.ExtractStrings(context.Background(), file, filename, config, func(str []byte, fname string, _ int64, cfg extractor.Config) {
 			if cfg.PrintFileName && fname != "" {
 				seqBuf.WriteString(fname + ": ")
 			}
 			seqBuf.Write(str)
 			seqBuf.WriteString("\n")
-		})
+		}); err != nil {
+			t.Fatalf("ExtractStrings: %v", err)
+		}
 		if err := file.Close(); err != nil {
 			t.Fatalf("Failed to close file: %v", err)
 		}
@@ -187,7 +190,7 @@ func TestSequentialVsParallel(t *testing.T) {
 	}
 	os.Stdout = w
 
-	processFilesParallel(filePaths, 2, config)
+	processFilesParallel(context.Background(), filePaths, 2, config)
 
 	if err := w.Close(); err != nil {
 		t.Fatalf("Failed to close pipe writer: %v", err)
@@ -235,7 +238,7 @@ func TestJSONMultipleFiles(t *testing.T) {
 	}
 
 	// Process files with JSON output
-	jsonPrinter := processFilesParallelJSON(filePaths, 2, config)
+	jsonPrinter := processFilesParallelJSON(context.Background(), filePaths, 2, config)
 
 	// Verify we have 3 file results
 	if len(jsonPrinter.FileResults) != 3 {
@@ -284,7 +287,7 @@ func TestJSONWithErrors(t *testing.T) {
 	}
 
 	// Process files (including nonexistent one)
-	jsonPrinter := processFilesParallelJSON([]string{file1, file2, file3}, 2, config)
+	jsonPrinter := processFilesParallelJSON(context.Background(), []string{file1, file2, file3}, 2, config)
 
 	// Verify we have 3 file results
 	if len(jsonPrinter.FileResults) != 3 {
@@ -350,7 +353,9 @@ func TestJSONOutputStructure(t *testing.T) {
 		}
 	}()
 
-	extractor.ExtractStrings(file, testFile, config, tempPrinter.PrintString)
+	if err := extractor.ExtractStrings(context.Background(), file, testFile, config, tempPrinter.PrintString); err != nil {
+		t.Fatalf("ExtractStrings: %v", err)
+	}
 
 	if err := tempPrinter.Flush(); err != nil {
 		t.Fatalf("Failed to flush JSON: %v", err)

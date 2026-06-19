@@ -2,6 +2,7 @@ package extractor
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"regexp"
 	"testing"
@@ -50,7 +51,7 @@ func FuzzExtractASCII(f *testing.F) {
 		}()
 
 		// Execute extraction
-		extractASCII(reader, "", config, printFunc, allow8bit)
+		_ = extractASCII(context.Background(), reader, "", config, printFunc, allow8bit)
 
 		// Invariant 1: All results meet minimum length
 		for i, result := range results {
@@ -77,7 +78,7 @@ func FuzzExtractASCII(f *testing.F) {
 			results2 = append(results2, append([]byte(nil), str...))
 		}
 		reader2 := bytes.NewReader(data)
-		extractASCII(reader2, "", config, printFunc2, allow8bit)
+		_ = extractASCII(context.Background(), reader2, "", config, printFunc2, allow8bit)
 
 		if len(results) != len(results2) {
 			t.Errorf("Non-deterministic: got %d strings, second run got %d",
@@ -136,7 +137,7 @@ func FuzzExtractUTF8Aware(f *testing.F) {
 				}
 				done <- true
 			}()
-			extractUTF8Aware(reader, "", config, printFunc)
+			_ = extractUTF8Aware(context.Background(), reader, "", config, printFunc)
 		}()
 
 		select {
@@ -216,7 +217,7 @@ func FuzzExtractUTF16(f *testing.F) {
 				}
 				done <- true
 			}()
-			extractUTF16(reader, "", config, printFunc, byteOrder)
+			_ = extractUTF16(context.Background(), reader, "", config, printFunc, byteOrder)
 		}()
 
 		select {
@@ -307,7 +308,7 @@ func FuzzExtractUTF32(f *testing.F) {
 				}
 				done <- true
 			}()
-			extractUTF32(reader, "", config, printFunc, byteOrder)
+			_ = extractUTF32(context.Background(), reader, "", config, printFunc, byteOrder)
 		}()
 
 		select {

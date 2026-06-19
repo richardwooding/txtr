@@ -60,14 +60,14 @@ txtr/
 ```
 
 **Core Components:**
-- `extractor.ExtractStrings()`: Dispatches to encoding-specific extractors
+- `extractor.ExtractStrings()`: Dispatches to encoding-specific extractors; takes a `context.Context` and returns `error` (returns `ctx.Err()` on cancel). Streaming loops wrap the reader in `ctxReader` (polls ctx once per buffer refill — no per-byte cost); byte-slice/mmap loops poll ctx once per 64 KiB chunk (`ctxChunk`) with a branch-free inner loop
 - `printer.PrintString()`: Formats output with colors/offsets
 - `printer.JSONPrinter`: Collector pattern for structured output
 - `printer.TriagePrinter`: Annotated triage output (tags each string by secret/entropy/category)
 - `stats.Statistics`: Aggregates metrics for `--stats` mode (incl. triage rollup)
 - `triage.Classify()`: Pure analysis (entropy + classification + secret rules); no internal deps, so `printer` and `stats` both reuse it without import cycles
-- `archive.Walk()`: Recurses archives/compressed containers, emitting each leaf file as a stream (`!/`-separated virtual paths) with depth + decompressed-size bomb guards; depends only on stdlib + pure-Go xz/zstd
-- `extractFile()` (cmd/txtr): single routing seam used by every mode — recursion > data-only > whole-file — so `--recurse` composes with text/triage/stats/JSON
+- `archives.Walk(ctx, ...)`: Recurses archives/compressed containers, emitting each leaf file as a stream (`!/`-separated virtual paths) with depth + decompressed-size bomb guards; cancellable via ctx (observed between members and mid-stream); depends only on stdlib + pure-Go xz/zstd
+- `extractFile()` (cmd/txtr): single routing seam used by every mode — recursion > data-only > whole-file — so `--recurse` composes with text/triage/stats/JSON. Takes `ctx`; `main()` derives it from `signal.NotifyContext` (SIGINT/SIGTERM). Worker pools select on `ctx.Done()`; `reportErr` suppresses cancellation noise so the central handler prints one `strings: interrupted` and exits 130
 
 **Key Patterns:**
 - Dependency injection: printFunc callback for testability
@@ -93,6 +93,7 @@ txtr/
 **Statistics Mode:** `--stats` for quick triage (encoding dist, length buckets, top-5 longest)
 **Security Triage:** `--triage`/`--secrets` for entropy scoring, content classification, and secret detection (composes with `-j` and `--stats`)
 **Archive Recursion:** `--recurse` descends into zip/apk/tar/gz/bz2/xz/zst/deb containers, scanning each member with `!/` virtual paths and decompression-bomb guards
+**Cancellation:** SIGINT (Ctrl-C)/SIGTERM cancels a `context.Context` threaded through every mode; extraction loops, worker pools, and archive walks abort promptly (clean `strings: interrupted`, exit 130)
 **JSON Output:** `--json` for automation (works with jq)
 **Color Output:** Auto TTY detection, respects NO_COLOR env var
 **Fuzzing:** 11 fuzz targets (string extraction, binary parsing, filtering, triage classification, archive walking) with CVE coverage
@@ -120,7 +121,7 @@ txtr/
 
 ## Dependencies
 
-**Runtime:** Kong v1.14.0, golang.org/x/exp/mmap, ulikunitz/xz + klauspost/compress (pure-Go xz/zstd for `--recurse`), Go 1.26 stdlib
+**Runtime:** Kong v1.15.0, richardwooding/archives v0.2.0 (context-cancellable archive walking) + triage v0.1.0, golang.org/x/exp/mmap, ulikunitz/xz + klauspost/compress (pure-Go xz/zstd for `--recurse`), Go 1.26 stdlib
 **Build:** GoReleaser v2.12.7, Ko (containerized), golangci-lint v2.9.0
 **Key:** Zero CGO, fully static binaries (~7MB; grew from ~3.8MB with the pure-Go zstd/xz decoders added for `--recurse`)
 

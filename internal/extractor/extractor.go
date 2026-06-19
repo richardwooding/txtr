@@ -4,14 +4,39 @@ package extractor
 
 import (
 	"bufio"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
-	"os"
 	"regexp"
 	"unicode/utf16"
 	"unicode/utf8"
 )
+
+// printFunc is the callback that receives each extracted string:
+// (string bytes, source path, byte offset within the source, config).
+type printFunc = func([]byte, string, int64, Config)
+
+// ctxChunk bounds how much in-memory data the byte-slice extractors scan
+// between cancellation polls (64 KiB). The poll lives in an outer loop so the
+// hot inner loop carries no per-byte branch and keeps full throughput.
+const ctxChunk = 64 << 10
+
+// ctxReader makes a streaming read cancellable without any per-byte cost: it
+// checks ctx once per underlying Read, which (through bufio) happens once per
+// buffer refill rather than per byte. A cancelled context surfaces as a read
+// error that the extraction loops return (wrapping context.Canceled).
+type ctxReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+func (c ctxReader) Read(p []byte) (int, error) {
+	if err := c.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return c.r.Read(p)
+}
 
 // ColorMode specifies when to use colored output.
 type ColorMode int
@@ -51,35 +76,35 @@ type Config struct {
 	RecurseMaxBytes      int64            // Max total decompressed bytes (0 = default, <0 = unlimited)
 }
 
-// ExtractStrings reads from reader and extracts printable strings
-func ExtractStrings(reader io.Reader, filename string, config Config, printFunc func([]byte, string, int64, Config)) {
+// ExtractStrings reads from reader and extracts printable strings. It returns
+// ctx.Err() if the context is cancelled mid-scan, or a read error otherwise.
+func ExtractStrings(ctx context.Context, reader io.Reader, filename string, config Config, printFunc printFunc) error {
 	switch config.Encoding {
 	case "s": // 7-bit ASCII
-		extractASCII(reader, filename, config, printFunc, false)
+		return extractASCII(ctx, reader, filename, config, printFunc, false)
 	case "S": // 8-bit ASCII
-		extractASCII(reader, filename, config, printFunc, true)
+		return extractASCII(ctx, reader, filename, config, printFunc, true)
 	case "b": // 16-bit big-endian (UTF-16BE)
-		extractUTF16(reader, filename, config, printFunc, binary.BigEndian)
+		return extractUTF16(ctx, reader, filename, config, printFunc, binary.BigEndian)
 	case "l": // 16-bit little-endian (UTF-16LE)
-		extractUTF16(reader, filename, config, printFunc, binary.LittleEndian)
+		return extractUTF16(ctx, reader, filename, config, printFunc, binary.LittleEndian)
 	case "B": // 32-bit big-endian (UTF-32BE)
-		extractUTF32(reader, filename, config, printFunc, binary.BigEndian)
+		return extractUTF32(ctx, reader, filename, config, printFunc, binary.BigEndian)
 	case "L": // 32-bit little-endian (UTF-32LE)
-		extractUTF32(reader, filename, config, printFunc, binary.LittleEndian)
+		return extractUTF32(ctx, reader, filename, config, printFunc, binary.LittleEndian)
 	default:
-		extractASCII(reader, filename, config, printFunc, false)
+		return extractASCII(ctx, reader, filename, config, printFunc, false)
 	}
 }
 
 // extractASCII extracts 7-bit or 8-bit ASCII strings
-func extractASCII(reader io.Reader, filename string, config Config, printFunc func([]byte, string, int64, Config), allow8bit bool) {
+func extractASCII(ctx context.Context, reader io.Reader, filename string, config Config, printFunc printFunc, allow8bit bool) error {
 	// If Unicode mode is not default/invalid, use UTF-8 aware extraction
 	if config.Unicode != "default" && config.Unicode != "invalid" && config.Unicode != "" {
-		extractUTF8Aware(reader, filename, config, printFunc)
-		return
+		return extractUTF8Aware(ctx, reader, filename, config, printFunc)
 	}
 
-	bufReader := bufio.NewReader(reader)
+	bufReader := bufio.NewReader(ctxReader{ctx, reader})
 	var currentString []byte
 	var offset int64
 	var stringStartOffset int64
@@ -92,10 +117,9 @@ func extractASCII(reader io.Reader, filename string, config Config, printFunc fu
 				if len(currentString) >= config.MinLength && ShouldPrintString(currentString, config) {
 					printFunc(currentString, filename, stringStartOffset, config)
 				}
-				break
+				return nil
 			}
-			fmt.Fprintf(os.Stderr, "strings: error reading: %v\n", err)
-			return
+			return fmt.Errorf("error reading: %w", err)
 		}
 
 		if isPrintableASCII(b, allow8bit, config.IncludeAllWhitespace) {
@@ -116,8 +140,8 @@ func extractASCII(reader io.Reader, filename string, config Config, printFunc fu
 }
 
 // extractUTF8Aware extracts strings with UTF-8 awareness and special display modes
-func extractUTF8Aware(reader io.Reader, filename string, config Config, printFunc func([]byte, string, int64, Config)) {
-	bufReader := bufio.NewReader(reader)
+func extractUTF8Aware(ctx context.Context, reader io.Reader, filename string, config Config, printFunc printFunc) error {
+	bufReader := bufio.NewReader(ctxReader{ctx, reader})
 	var currentString []byte
 	var currentOutput []byte // May differ from currentString based on Unicode mode
 	var offset int64
@@ -131,10 +155,9 @@ func extractUTF8Aware(reader io.Reader, filename string, config Config, printFun
 				if len(currentString) >= config.MinLength && ShouldPrintString(currentOutput, config) {
 					printFunc(currentOutput, filename, stringStartOffset, config)
 				}
-				break
+				return nil
 			}
-			fmt.Fprintf(os.Stderr, "strings: error reading: %v\n", err)
-			return
+			return fmt.Errorf("error reading: %w", err)
 		}
 
 		// Check if this starts a UTF-8 sequence
@@ -227,8 +250,8 @@ func extractUTF8Aware(reader io.Reader, filename string, config Config, printFun
 }
 
 // extractUTF16 extracts UTF-16 encoded strings
-func extractUTF16(reader io.Reader, filename string, config Config, printFunc func([]byte, string, int64, Config), byteOrder binary.ByteOrder) {
-	bufReader := bufio.NewReader(reader)
+func extractUTF16(ctx context.Context, reader io.Reader, filename string, config Config, printFunc printFunc, byteOrder binary.ByteOrder) error {
+	bufReader := bufio.NewReader(ctxReader{ctx, reader})
 	var currentRunes []rune
 	var offset int64
 	var stringStartOffset int64
@@ -243,10 +266,9 @@ func extractUTF16(reader io.Reader, filename string, config Config, printFunc fu
 				if len(currentRunes) >= config.MinLength && ShouldPrintString(str, config) {
 					printFunc(str, filename, stringStartOffset, config)
 				}
-				break
+				return nil
 			}
-			fmt.Fprintf(os.Stderr, "strings: error reading: %v\n", err)
-			return
+			return fmt.Errorf("error reading: %w", err)
 		}
 
 		if n == 2 {
@@ -283,8 +305,8 @@ func extractUTF16(reader io.Reader, filename string, config Config, printFunc fu
 }
 
 // extractUTF32 extracts UTF-32 encoded strings
-func extractUTF32(reader io.Reader, filename string, config Config, printFunc func([]byte, string, int64, Config), byteOrder binary.ByteOrder) {
-	bufReader := bufio.NewReader(reader)
+func extractUTF32(ctx context.Context, reader io.Reader, filename string, config Config, printFunc printFunc, byteOrder binary.ByteOrder) error {
+	bufReader := bufio.NewReader(ctxReader{ctx, reader})
 	var currentRunes []rune
 	var offset int64
 	var stringStartOffset int64
@@ -299,10 +321,9 @@ func extractUTF32(reader io.Reader, filename string, config Config, printFunc fu
 				if len(currentRunes) >= config.MinLength && ShouldPrintString(str, config) {
 					printFunc(str, filename, stringStartOffset, config)
 				}
-				break
+				return nil
 			}
-			fmt.Fprintf(os.Stderr, "strings: error reading: %v\n", err)
-			return
+			return fmt.Errorf("error reading: %w", err)
 		}
 
 		if n == 4 {
@@ -380,42 +401,50 @@ func isPrintableRune(r rune, includeAllWhitespace bool) bool {
 }
 
 // ExtractFromSection extracts strings from a specific section's data
-func ExtractFromSection(data []byte, _ string, sectionOffset int64, filename string, config Config, printFunc func([]byte, string, int64, Config)) {
+func ExtractFromSection(ctx context.Context, data []byte, _ string, sectionOffset int64, filename string, config Config, printFunc printFunc) error {
 	// Use appropriate extraction based on encoding
 	switch config.Encoding {
 	case "s": // 7-bit ASCII
-		extractASCIIFromBytes(data, sectionOffset, filename, config, printFunc, false)
+		return extractASCIIFromBytes(ctx, data, sectionOffset, filename, config, printFunc, false)
 	case "S": // 8-bit ASCII
-		extractASCIIFromBytes(data, sectionOffset, filename, config, printFunc, true)
+		return extractASCIIFromBytes(ctx, data, sectionOffset, filename, config, printFunc, true)
 	case "b": // UTF-16BE
-		extractUTF16FromBytes(data, sectionOffset, filename, config, printFunc, binary.BigEndian)
+		return extractUTF16FromBytes(ctx, data, sectionOffset, filename, config, printFunc, binary.BigEndian)
 	case "l": // UTF-16LE
-		extractUTF16FromBytes(data, sectionOffset, filename, config, printFunc, binary.LittleEndian)
+		return extractUTF16FromBytes(ctx, data, sectionOffset, filename, config, printFunc, binary.LittleEndian)
 	case "B": // UTF-32BE
-		extractUTF32FromBytes(data, sectionOffset, filename, config, printFunc, binary.BigEndian)
+		return extractUTF32FromBytes(ctx, data, sectionOffset, filename, config, printFunc, binary.BigEndian)
 	case "L": // UTF-32LE
-		extractUTF32FromBytes(data, sectionOffset, filename, config, printFunc, binary.LittleEndian)
+		return extractUTF32FromBytes(ctx, data, sectionOffset, filename, config, printFunc, binary.LittleEndian)
 	default:
-		extractASCIIFromBytes(data, sectionOffset, filename, config, printFunc, false)
+		return extractASCIIFromBytes(ctx, data, sectionOffset, filename, config, printFunc, false)
 	}
 }
 
 // extractASCIIFromBytes is a helper for extracting from byte slices
-func extractASCIIFromBytes(data []byte, baseOffset int64, filename string, config Config, printFunc func([]byte, string, int64, Config), allow8bit bool) {
+func extractASCIIFromBytes(ctx context.Context, data []byte, baseOffset int64, filename string, config Config, printFunc printFunc, allow8bit bool) error {
 	var currentString []byte
 	var stringStartOffset int64
 
-	for i, b := range data {
-		if isPrintableASCII(b, allow8bit, config.IncludeAllWhitespace) {
-			if len(currentString) == 0 {
-				stringStartOffset = baseOffset + int64(i)
+	// Outer loop polls ctx every ctxChunk bytes; inner loop is branch-free.
+	for off := 0; off < len(data); off += ctxChunk {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		end := min(off+ctxChunk, len(data))
+		for i := off; i < end; i++ {
+			b := data[i]
+			if isPrintableASCII(b, allow8bit, config.IncludeAllWhitespace) {
+				if len(currentString) == 0 {
+					stringStartOffset = baseOffset + int64(i)
+				}
+				currentString = append(currentString, b)
+			} else {
+				if len(currentString) >= config.MinLength && ShouldPrintString(currentString, config) {
+					printFunc(currentString, filename, stringStartOffset, config)
+				}
+				currentString = currentString[:0]
 			}
-			currentString = append(currentString, b)
-		} else {
-			if len(currentString) >= config.MinLength && ShouldPrintString(currentString, config) {
-				printFunc(currentString, filename, stringStartOffset, config)
-			}
-			currentString = currentString[:0]
 		}
 	}
 
@@ -423,28 +452,37 @@ func extractASCIIFromBytes(data []byte, baseOffset int64, filename string, confi
 	if len(currentString) >= config.MinLength && ShouldPrintString(currentString, config) {
 		printFunc(currentString, filename, stringStartOffset, config)
 	}
+	return nil
 }
 
 // extractUTF16FromBytes extracts UTF-16 from byte slice
-func extractUTF16FromBytes(data []byte, baseOffset int64, filename string, config Config, printFunc func([]byte, string, int64, Config), byteOrder binary.ByteOrder) {
+func extractUTF16FromBytes(ctx context.Context, data []byte, baseOffset int64, filename string, config Config, printFunc printFunc, byteOrder binary.ByteOrder) error {
 	var currentRunes []rune
 	var stringStartOffset int64
 
-	for i := 0; i < len(data)-1; i += 2 {
-		u16 := byteOrder.Uint16(data[i : i+2])
-		r := rune(u16)
+	// Outer loop polls ctx every ctxChunk bytes (chunk is even, so 2-byte units
+	// never straddle a boundary); inner loop is branch-free.
+	for off := 0; off < len(data)-1; off += ctxChunk {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		end := min(off+ctxChunk, len(data)-1)
+		for i := off; i < end; i += 2 {
+			u16 := byteOrder.Uint16(data[i : i+2])
+			r := rune(u16)
 
-		if isPrintableRune(r, config.IncludeAllWhitespace) {
-			if len(currentRunes) == 0 {
-				stringStartOffset = baseOffset + int64(i)
+			if isPrintableRune(r, config.IncludeAllWhitespace) {
+				if len(currentRunes) == 0 {
+					stringStartOffset = baseOffset + int64(i)
+				}
+				currentRunes = append(currentRunes, r)
+			} else {
+				str := []byte(string(currentRunes))
+				if len(currentRunes) >= config.MinLength && ShouldPrintString(str, config) {
+					printFunc(str, filename, stringStartOffset, config)
+				}
+				currentRunes = currentRunes[:0]
 			}
-			currentRunes = append(currentRunes, r)
-		} else {
-			str := []byte(string(currentRunes))
-			if len(currentRunes) >= config.MinLength && ShouldPrintString(str, config) {
-				printFunc(str, filename, stringStartOffset, config)
-			}
-			currentRunes = currentRunes[:0]
 		}
 	}
 
@@ -452,28 +490,37 @@ func extractUTF16FromBytes(data []byte, baseOffset int64, filename string, confi
 	if len(currentRunes) >= config.MinLength && ShouldPrintString(str, config) {
 		printFunc(str, filename, stringStartOffset, config)
 	}
+	return nil
 }
 
 // extractUTF32FromBytes extracts UTF-32 from byte slice
-func extractUTF32FromBytes(data []byte, baseOffset int64, filename string, config Config, printFunc func([]byte, string, int64, Config), byteOrder binary.ByteOrder) {
+func extractUTF32FromBytes(ctx context.Context, data []byte, baseOffset int64, filename string, config Config, printFunc printFunc, byteOrder binary.ByteOrder) error {
 	var currentRunes []rune
 	var stringStartOffset int64
 
-	for i := 0; i < len(data)-3; i += 4 {
-		u32 := byteOrder.Uint32(data[i : i+4])
-		r := rune(u32)
+	// Outer loop polls ctx every ctxChunk bytes (chunk is divisible by 4, so
+	// 4-byte units never straddle a boundary); inner loop is branch-free.
+	for off := 0; off < len(data)-3; off += ctxChunk {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		end := min(off+ctxChunk, len(data)-3)
+		for i := off; i < end; i += 4 {
+			u32 := byteOrder.Uint32(data[i : i+4])
+			r := rune(u32)
 
-		if isPrintableRune(r, config.IncludeAllWhitespace) && utf8.ValidRune(r) {
-			if len(currentRunes) == 0 {
-				stringStartOffset = baseOffset + int64(i)
+			if isPrintableRune(r, config.IncludeAllWhitespace) && utf8.ValidRune(r) {
+				if len(currentRunes) == 0 {
+					stringStartOffset = baseOffset + int64(i)
+				}
+				currentRunes = append(currentRunes, r)
+			} else {
+				str := []byte(string(currentRunes))
+				if len(currentRunes) >= config.MinLength && ShouldPrintString(str, config) {
+					printFunc(str, filename, stringStartOffset, config)
+				}
+				currentRunes = currentRunes[:0]
 			}
-			currentRunes = append(currentRunes, r)
-		} else {
-			str := []byte(string(currentRunes))
-			if len(currentRunes) >= config.MinLength && ShouldPrintString(str, config) {
-				printFunc(str, filename, stringStartOffset, config)
-			}
-			currentRunes = currentRunes[:0]
 		}
 	}
 
@@ -481,4 +528,5 @@ func extractUTF32FromBytes(data []byte, baseOffset int64, filename string, confi
 	if len(currentRunes) >= config.MinLength && ShouldPrintString(str, config) {
 		printFunc(str, filename, stringStartOffset, config)
 	}
+	return nil
 }

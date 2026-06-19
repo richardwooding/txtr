@@ -4,6 +4,7 @@ package extractor
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 )
@@ -60,7 +61,9 @@ func TestExtractUTF8(t *testing.T) {
 			}
 
 			reader := strings.NewReader(tt.input)
-			ExtractStrings(reader, "", config, printFunc)
+			if err := ExtractStrings(context.Background(), reader, "", config, printFunc); err != nil {
+				t.Fatalf("ExtractStrings: %v", err)
+			}
 
 			if string(result) != tt.expected {
 				t.Errorf("got %q, want %q", string(result), tt.expected)
@@ -91,7 +94,9 @@ func TestExtractUTF16LE(t *testing.T) {
 	}
 
 	reader := bytes.NewReader(input)
-	ExtractStrings(reader, "", config, printFunc)
+	if err := ExtractStrings(context.Background(), reader, "", config, printFunc); err != nil {
+		t.Fatalf("ExtractStrings: %v", err)
+	}
 
 	if string(result) != "hello" {
 		t.Errorf("UTF-16LE extraction failed: got %q, want %q", string(result), "hello")
@@ -119,7 +124,9 @@ func TestExtractUTF16BE(t *testing.T) {
 	}
 
 	reader := bytes.NewReader(input)
-	ExtractStrings(reader, "", config, printFunc)
+	if err := ExtractStrings(context.Background(), reader, "", config, printFunc); err != nil {
+		t.Fatalf("ExtractStrings: %v", err)
+	}
 
 	if string(result) != "hello" {
 		t.Errorf("UTF-16BE extraction failed: got %q, want %q", string(result), "hello")
@@ -146,7 +153,9 @@ func TestExtractUTF32LE(t *testing.T) {
 	}
 
 	reader := bytes.NewReader(input)
-	ExtractStrings(reader, "", config, printFunc)
+	if err := ExtractStrings(context.Background(), reader, "", config, printFunc); err != nil {
+		t.Fatalf("ExtractStrings: %v", err)
+	}
 
 	if string(result) != "test" {
 		t.Errorf("UTF-32LE extraction failed: got %q, want %q", string(result), "test")
@@ -173,7 +182,9 @@ func TestExtractUTF32BE(t *testing.T) {
 	}
 
 	reader := bytes.NewReader(input)
-	ExtractStrings(reader, "", config, printFunc)
+	if err := ExtractStrings(context.Background(), reader, "", config, printFunc); err != nil {
+		t.Fatalf("ExtractStrings: %v", err)
+	}
 
 	if string(result) != "test" {
 		t.Errorf("UTF-32BE extraction failed: got %q, want %q", string(result), "test")
@@ -213,7 +224,9 @@ func TestIncludeAllWhitespace(t *testing.T) {
 			}
 
 			reader := strings.NewReader(input)
-			ExtractStrings(reader, "", config, printFunc)
+			if err := ExtractStrings(context.Background(), reader, "", config, printFunc); err != nil {
+				t.Fatalf("ExtractStrings: %v", err)
+			}
 
 			resultStr := string(result)
 			if !strings.Contains(resultStr, "hello") || !strings.Contains(resultStr, "world") {
@@ -260,7 +273,9 @@ func Test8BitASCII(t *testing.T) {
 			}
 
 			reader := bytes.NewReader(input)
-			ExtractStrings(reader, "", config, printFunc)
+			if err := ExtractStrings(context.Background(), reader, "", config, printFunc); err != nil {
+				t.Fatalf("ExtractStrings: %v", err)
+			}
 
 			if len(result) < tt.minChars {
 				t.Errorf("%s: expected at least %d chars, got %d", tt.name, tt.minChars, len(result))

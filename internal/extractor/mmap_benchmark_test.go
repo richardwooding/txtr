@@ -2,6 +2,7 @@ package extractor
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -44,7 +45,7 @@ func BenchmarkExtract_1MB_BufferedIO(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = ExtractStringsFromFile(testFile, config, printFunc)
+		_ = ExtractStringsFromFile(context.Background(), testFile, config, printFunc)
 	}
 }
 
@@ -61,7 +62,7 @@ func BenchmarkExtract_1MB_Mmap(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = ExtractStringsFromFile(testFile, config, printFunc)
+		_ = ExtractStringsFromFile(context.Background(), testFile, config, printFunc)
 	}
 }
 
@@ -79,7 +80,7 @@ func BenchmarkExtract_10MB_BufferedIO(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = ExtractStringsFromFile(testFile, config, printFunc)
+		_ = ExtractStringsFromFile(context.Background(), testFile, config, printFunc)
 	}
 }
 
@@ -96,7 +97,7 @@ func BenchmarkExtract_10MB_Mmap(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = ExtractStringsFromFile(testFile, config, printFunc)
+		_ = ExtractStringsFromFile(context.Background(), testFile, config, printFunc)
 	}
 }
 
@@ -114,7 +115,7 @@ func BenchmarkExtract_100MB_BufferedIO(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = ExtractStringsFromFile(testFile, config, printFunc)
+		_ = ExtractStringsFromFile(context.Background(), testFile, config, printFunc)
 	}
 }
 
@@ -131,7 +132,7 @@ func BenchmarkExtract_100MB_Mmap(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = ExtractStringsFromFile(testFile, config, printFunc)
+		_ = ExtractStringsFromFile(context.Background(), testFile, config, printFunc)
 	}
 }
 
@@ -164,7 +165,7 @@ func BenchmarkExtractUTF16_10MB_BufferedIO(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = ExtractStringsFromFile(testFile, config, printFunc)
+		_ = ExtractStringsFromFile(context.Background(), testFile, config, printFunc)
 	}
 }
 
@@ -196,7 +197,7 @@ func BenchmarkExtractUTF16_10MB_Mmap(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = ExtractStringsFromFile(testFile, config, printFunc)
+		_ = ExtractStringsFromFile(context.Background(), testFile, config, printFunc)
 	}
 }
 
@@ -227,7 +228,7 @@ func BenchmarkExtract8BitASCII_10MB_BufferedIO(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = ExtractStringsFromFile(testFile, config, printFunc)
+		_ = ExtractStringsFromFile(context.Background(), testFile, config, printFunc)
 	}
 }
 
@@ -257,6 +258,6 @@ func BenchmarkExtract8BitASCII_10MB_Mmap(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = ExtractStringsFromFile(testFile, config, printFunc)
+		_ = ExtractStringsFromFile(context.Background(), testFile, config, printFunc)
 	}
 }

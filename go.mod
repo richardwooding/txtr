@@ -12,4 +12,4 @@ require (
 
 require github.com/richardwooding/triage v0.1.0
 
-require github.com/richardwooding/archives v0.1.0
+require github.com/richardwooding/archives v0.2.0
