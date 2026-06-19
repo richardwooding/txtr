@@ -8,8 +8,8 @@ import (
 	"io"
 	"os"
 
+	"github.com/richardwooding/triage"
 	"github.com/richardwooding/txtr/internal/extractor"
-	"github.com/richardwooding/txtr/internal/triage"
 )
 
 // StringResult represents a single extracted string in JSON format
@@ -45,9 +45,9 @@ type FileResult struct {
 
 // Summary contains metadata about the extraction
 type Summary struct {
-	TotalStrings int   `json:"total_strings"`
-	TotalBytes   int64 `json:"total_bytes"`
-	MinLength    int   `json:"min_length"`
+	TotalStrings int    `json:"total_strings"`
+	TotalBytes   int64  `json:"total_bytes"`
+	MinLength    int    `json:"min_length"`
 	Encoding     string `json:"encoding"`
 }
 
@@ -57,8 +57,8 @@ type JSONPrinter struct {
 	config      extractor.Config
 	writer      io.Writer
 	// Current file being processed
-	currentFile    string
-	currentFormat  string
+	currentFile     string
+	currentFormat   string
 	currentSections []string
 	currentStrings  []StringResult
 }
