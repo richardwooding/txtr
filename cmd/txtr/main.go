@@ -12,7 +12,7 @@ import (
 	"sync"
 
 	"github.com/alecthomas/kong"
-	"github.com/richardwooding/txtr/internal/archive"
+	"github.com/richardwooding/archives"
 	"github.com/richardwooding/txtr/internal/binary"
 	"github.com/richardwooding/txtr/internal/extractor"
 	"github.com/richardwooding/txtr/internal/printer"
@@ -29,8 +29,8 @@ type printFunc = func([]byte, string, int64, extractor.Config)
 // every output mode so recursion composes with text/triage/stats/JSON output.
 func extractFile(filename string, config extractor.Config, fn printFunc) error {
 	if config.Recursive {
-		opts := archive.Options{MaxDepth: config.RecurseMaxDepth, MaxBytes: config.RecurseMaxBytes}
-		return archive.Walk(filename, opts, func(vpath string, r io.Reader) error {
+		opts := archives.Options{MaxDepth: config.RecurseMaxDepth, MaxBytes: config.RecurseMaxBytes}
+		return archives.Walk(filename, opts, func(vpath string, r io.Reader) error {
 			extractor.ExtractStrings(r, vpath, config, fn)
 			return nil
 		})

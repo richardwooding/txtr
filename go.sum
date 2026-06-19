@@ -8,6 +8,8 @@ github.com/hexops/gotextdiff v1.0.3 h1:gitA9+qJrrTCsiCl7+kh75nPqQt1cx4ZkudSTLoUq
 github.com/hexops/gotextdiff v1.0.3/go.mod h1:pSWU5MAI3yDq+fZBTazCSJysOMbxWL1BSow5/V2vxeg=
 github.com/klauspost/compress v1.18.6 h1:2jupLlAwFm95+YDR+NwD2MEfFO9d4z4Prjl1XXDjuao=
 github.com/klauspost/compress v1.18.6/go.mod h1:cwPg85FWrGar70rWktvGQj8/hthj3wpl0PGDogxkrSQ=
+github.com/richardwooding/archives v0.1.0 h1:0zi9jrEMYw6jx9GcxwGIEHgbDzsYxa5EgXYonYxAuYE=
+github.com/richardwooding/archives v0.1.0/go.mod h1:j+3Xf8avzoJV6Qj+IGuvzvCWtOQGl+ixUW4a3mzK8bE=
 github.com/richardwooding/triage v0.1.0 h1:EAnmEh/wlI0EJypyY73JM7SH/gg2vMne0HqHCQsbW1k=
 github.com/richardwooding/triage v0.1.0/go.mod h1:nbnguCFTQ9NOAS0iFBytSInQITjfKwx8LPd3XOPqBOk=
 github.com/ulikunitz/xz v0.5.15 h1:9DNdB5s+SgV3bQ2ApL10xRc35ck0DuIX/isZvIk+ubY=
