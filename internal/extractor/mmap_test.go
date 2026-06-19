@@ -2,6 +2,7 @@ package extractor
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -147,7 +148,7 @@ func TestExtractStringsFromFile(t *testing.T) {
 				collectedStrings = append(collectedStrings, string(str))
 			}
 
-			err := ExtractStringsFromFile(testFile, tt.config, printFunc)
+			err := ExtractStringsFromFile(context.Background(), testFile, tt.config, printFunc)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ExtractStringsFromFile() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -202,7 +203,7 @@ func TestMmapEquivalence(t *testing.T) {
 				bufferedStrings = append(bufferedStrings, string(str))
 			}
 
-			if err := ExtractStringsFromFile(testFile, configBuffered, printFuncBuffered); err != nil {
+			if err := ExtractStringsFromFile(context.Background(), testFile, configBuffered, printFuncBuffered); err != nil {
 				t.Fatalf("Buffered extraction failed: %v", err)
 			}
 
@@ -216,7 +217,7 @@ func TestMmapEquivalence(t *testing.T) {
 				mmapStrings = append(mmapStrings, string(str))
 			}
 
-			if err := ExtractStringsFromFile(testFile, configMmap, printFuncMmap); err != nil {
+			if err := ExtractStringsFromFile(context.Background(), testFile, configMmap, printFuncMmap); err != nil {
 				t.Fatalf("Mmap extraction failed: %v", err)
 			}
 
@@ -260,7 +261,7 @@ func TestMmapFallback(t *testing.T) {
 	}
 
 	// This should succeed even if mmap fails, as it falls back to buffered I/O
-	if err := ExtractStringsFromFile(testFile, config, printFunc); err != nil {
+	if err := ExtractStringsFromFile(context.Background(), testFile, config, printFunc); err != nil {
 		t.Errorf("ExtractStringsFromFile() should fallback on mmap failure, but got error: %v", err)
 	}
 
@@ -292,7 +293,7 @@ func TestMmapWithUTF16(t *testing.T) {
 		extracted = append(extracted, string(str))
 	}
 
-	if err := ExtractStringsFromFile(testFile, config, printFunc); err != nil {
+	if err := ExtractStringsFromFile(context.Background(), testFile, config, printFunc); err != nil {
 		t.Fatalf("ExtractStringsFromFile() failed: %v", err)
 	}
 
@@ -330,7 +331,7 @@ func TestMmapWithUTF32(t *testing.T) {
 		extracted = append(extracted, string(str))
 	}
 
-	if err := ExtractStringsFromFile(testFile, config, printFunc); err != nil {
+	if err := ExtractStringsFromFile(context.Background(), testFile, config, printFunc); err != nil {
 		t.Fatalf("ExtractStringsFromFile() failed: %v", err)
 	}
 
@@ -350,7 +351,7 @@ func TestMmapNonexistentFile(t *testing.T) {
 
 	printFunc := func(_ []byte, _ string, _ int64, _ Config) {}
 
-	err := ExtractStringsFromFile("/nonexistent/file.bin", config, printFunc)
+	err := ExtractStringsFromFile(context.Background(), "/nonexistent/file.bin", config, printFunc)
 	if err == nil {
 		t.Error("Expected error for nonexistent file, got nil")
 	}

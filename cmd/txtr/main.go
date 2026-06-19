@@ -4,12 +4,16 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"regexp"
 	"runtime"
 	"sync"
+	"syscall"
 
 	"github.com/alecthomas/kong"
 	"github.com/richardwooding/archives"
@@ -19,6 +23,21 @@ import (
 	"github.com/richardwooding/txtr/internal/stats"
 )
 
+// reportErr prints a per-file error to stderr unless it is a context
+// cancellation (which is reported once, centrally, as "strings: interrupted").
+// It returns true when err is a cancellation, signalling callers to stop.
+func reportErr(filename string, err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	if filename != "" {
+		fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
+	} else {
+		fmt.Fprintf(os.Stderr, "strings: %v\n", err)
+	}
+	return false
+}
+
 // printFunc is the callback every output mode supplies to receive extracted
 // strings: (string bytes, source path, byte offset within the source, config).
 type printFunc = func([]byte, string, int64, extractor.Config)
@@ -27,18 +46,17 @@ type printFunc = func([]byte, string, int64, extractor.Config)
 // based on config precedence: recursion (archive walk) > data-only (binary
 // sections) > whole-file scan. Extracted strings are delivered to fn. Used by
 // every output mode so recursion composes with text/triage/stats/JSON output.
-func extractFile(filename string, config extractor.Config, fn printFunc) error {
+func extractFile(ctx context.Context, filename string, config extractor.Config, fn printFunc) error {
 	if config.Recursive {
 		opts := archives.Options{MaxDepth: config.RecurseMaxDepth, MaxBytes: config.RecurseMaxBytes}
-		return archives.Walk(filename, opts, func(vpath string, r io.Reader) error {
-			extractor.ExtractStrings(r, vpath, config, fn)
-			return nil
+		return archives.Walk(ctx, filename, opts, func(wctx context.Context, vpath string, r io.Reader) error {
+			return extractor.ExtractStrings(wctx, r, vpath, config, fn)
 		})
 	}
 	if config.ScanDataOnly {
-		return extractFileWithBinaryParsing(filename, config, fn)
+		return extractFileWithBinaryParsing(ctx, filename, config, fn)
 	}
-	return extractor.ExtractStringsFromFile(filename, config, fn)
+	return extractor.ExtractStringsFromFile(ctx, filename, config, fn)
 }
 
 // Build information (set by goreleaser via ldflags)
@@ -243,46 +261,63 @@ func main() {
 		workers = runtime.NumCPU()
 	}
 
+	// Cancellable context wired to Ctrl-C (SIGINT) and SIGTERM so long scans,
+	// worker pools, and archive walks can be aborted promptly.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	// Process files or stdin
 	if cli.Stats {
 		// Statistics output mode
-		processWithStats(cli.Files, workers, config, cli.StatsPerFile)
+		processWithStats(ctx, cli.Files, workers, config, cli.StatsPerFile)
 	} else if cli.JSON {
 		// JSON output mode
-		processWithJSON(cli.Files, workers, config)
+		processWithJSON(ctx, cli.Files, workers, config)
 	} else if cli.Triage {
 		// Security triage output mode
-		processWithTriage(cli.Files, workers, config)
+		processWithTriage(ctx, cli.Files, workers, config)
 	} else if len(cli.Files) == 0 {
 		// Read from stdin
-		extractor.ExtractStrings(os.Stdin, "", config, printer.PrintString)
+		if err := extractor.ExtractStrings(ctx, os.Stdin, "", config, printer.PrintString); err != nil {
+			reportErr("", err)
+		}
 	} else if len(cli.Files) > 1 && workers > 1 {
 		// Process multiple files in parallel
-		processFilesParallel(cli.Files, workers, config)
+		processFilesParallel(ctx, cli.Files, workers, config)
 	} else {
 		// Process each file sequentially (single file or workers=1)
 		for _, filename := range cli.Files {
-			if err := extractFile(filename, config, printer.PrintString); err != nil {
-				fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
+			if err := extractFile(ctx, filename, config, printer.PrintString); err != nil {
+				if reportErr(filename, err) {
+					break
+				}
 				continue
 			}
 		}
+	}
+
+	// Single, central cancellation notice + conventional 128+SIGINT exit code.
+	if ctx.Err() != nil {
+		fmt.Fprintln(os.Stderr, "strings: interrupted")
+		os.Exit(130)
 	}
 }
 
 // processWithJSON processes files or stdin with JSON output
 // Supports parallel processing for multiple files with automatic error handling
-func processWithJSON(files []string, workers int, config extractor.Config) {
+func processWithJSON(ctx context.Context, files []string, workers int, config extractor.Config) {
 	var jsonPrinter *printer.JSONPrinter
 
 	if len(files) == 0 {
 		// Read from stdin
 		jsonPrinter = printer.NewJSONPrinter(config, os.Stdout)
 		jsonPrinter.SetFileInfo("", "", nil)
-		extractor.ExtractStrings(os.Stdin, "", config, jsonPrinter.PrintString)
+		if err := extractor.ExtractStrings(ctx, os.Stdin, "", config, jsonPrinter.PrintString); err != nil {
+			reportErr("", err)
+		}
 	} else if len(files) > 1 && workers > 1 {
 		// Process multiple files in parallel
-		jsonPrinter = processFilesParallelJSON(files, workers, config)
+		jsonPrinter = processFilesParallelJSON(ctx, files, workers, config)
 	} else {
 		// Process files sequentially (single file or workers=1)
 		jsonPrinter = printer.NewJSONPrinter(config, os.Stdout)
@@ -290,19 +325,23 @@ func processWithJSON(files []string, workers int, config extractor.Config) {
 		for _, filename := range files {
 			if config.Recursive {
 				jsonPrinter.SetFileInfo(filename, "archive", nil)
-				if err := extractFile(filename, config, jsonPrinter.PrintString); err != nil {
-					fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
+				if err := extractFile(ctx, filename, config, jsonPrinter.PrintString); err != nil {
+					if reportErr(filename, err) {
+						break
+					}
 					jsonPrinter.AddFileResult(filename, "archive", nil, nil, err)
 					continue
 				}
 			} else if config.ScanDataOnly {
 				// Parse binary and extract from data sections
-				processFileWithBinaryParsingJSON(filename, config, jsonPrinter)
+				processFileWithBinaryParsingJSON(ctx, filename, config, jsonPrinter)
 			} else {
 				// Regular full-file scanning with automatic mmap optimization
 				jsonPrinter.SetFileInfo(filename, "", nil)
-				if err := extractor.ExtractStringsFromFile(filename, config, jsonPrinter.PrintString); err != nil {
-					fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
+				if err := extractor.ExtractStringsFromFile(ctx, filename, config, jsonPrinter.PrintString); err != nil {
+					if reportErr(filename, err) {
+						break
+					}
 					// Add error result to JSON
 					jsonPrinter.AddFileResult(filename, "", nil, nil, err)
 					continue
@@ -319,7 +358,7 @@ func processWithJSON(files []string, workers int, config extractor.Config) {
 }
 
 // processFileWithBinaryParsingJSON handles binary parsing with JSON output
-func processFileWithBinaryParsingJSON(filename string, config extractor.Config, jsonPrinter *printer.JSONPrinter) {
+func processFileWithBinaryParsingJSON(ctx context.Context, filename string, config extractor.Config, jsonPrinter *printer.JSONPrinter) {
 	// Determine format
 	var format binary.Format
 	var err error
@@ -364,7 +403,9 @@ func processFileWithBinaryParsingJSON(filename string, config extractor.Config, 
 		}()
 
 		jsonPrinter.SetFileInfo(filename, format.String(), nil)
-		extractor.ExtractStrings(file, filename, config, jsonPrinter.PrintString)
+		if err := extractor.ExtractStrings(ctx, file, filename, config, jsonPrinter.PrintString); err != nil {
+			reportErr(filename, err)
+		}
 		return
 	}
 
@@ -390,18 +431,24 @@ func processFileWithBinaryParsingJSON(filename string, config extractor.Config, 
 			}
 		}()
 
-		extractor.ExtractStrings(file, filename, config, jsonPrinter.PrintString)
+		if err := extractor.ExtractStrings(ctx, file, filename, config, jsonPrinter.PrintString); err != nil {
+			reportErr(filename, err)
+		}
 		return
 	}
 
 	// Extract strings from each data section
 	for _, section := range sections {
-		extractor.ExtractFromSection(section.Data, section.Name, section.Offset, filename, config, jsonPrinter.PrintString)
+		if err := extractor.ExtractFromSection(ctx, section.Data, section.Name, section.Offset, filename, config, jsonPrinter.PrintString); err != nil {
+			if reportErr(filename, err) {
+				break
+			}
+		}
 	}
 }
 
 // processFilesParallel processes multiple files in parallel using a worker pool
-func processFilesParallel(filenames []string, workers int, config extractor.Config) {
+func processFilesParallel(ctx context.Context, filenames []string, workers int, config extractor.Config) {
 	// Create channels for jobs and results
 	jobs := make(chan job, len(filenames))
 	results := make(chan result, len(filenames))
@@ -410,27 +457,42 @@ func processFilesParallel(filenames []string, workers int, config extractor.Conf
 	var wg sync.WaitGroup
 	for range workers {
 		wg.Go(func() {
-			for j := range jobs {
-				// Create a buffer to capture output for this file
-				var buf bytes.Buffer
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case j, ok := <-jobs:
+					if !ok {
+						return
+					}
+					// Create a buffer to capture output for this file
+					var buf bytes.Buffer
 
-				// Create a print function that writes to the buffer
-				printToBuf := func(str []byte, filename string, offset int64, cfg extractor.Config) {
-					printer.PrintStringToWriter(&buf, str, filename, offset, cfg)
+					// Create a print function that writes to the buffer
+					printToBuf := func(str []byte, filename string, offset int64, cfg extractor.Config) {
+						printer.PrintStringToWriter(&buf, str, filename, offset, cfg)
+					}
+
+					// Process the file (recursion/data-only/whole-file)
+					err := extractFile(ctx, j.filename, config, printToBuf)
+
+					// Send result
+					select {
+					case results <- result{index: j.index, output: buf.String(), err: err}:
+					case <-ctx.Done():
+						return
+					}
 				}
-
-				// Process the file (recursion/data-only/whole-file)
-				err := extractFile(j.filename, config, printToBuf)
-
-				// Send result
-				results <- result{index: j.index, output: buf.String(), err: err}
 			}
 		})
 	}
 
 	// Send jobs
 	for i, filename := range filenames {
-		jobs <- job{filename: filename, index: i}
+		select {
+		case jobs <- job{filename: filename, index: i}:
+		case <-ctx.Done():
+		}
 	}
 	close(jobs)
 
@@ -449,7 +511,7 @@ func processFilesParallel(filenames []string, workers int, config extractor.Conf
 	// Print results in order
 	for _, r := range outputs {
 		if r.err != nil {
-			fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filenames[r.index], r.err)
+			reportErr(filenames[r.index], r.err)
 			continue
 		}
 		fmt.Print(r.output)
@@ -457,7 +519,7 @@ func processFilesParallel(filenames []string, workers int, config extractor.Conf
 }
 
 // processFilesParallelJSON processes multiple files in parallel for JSON output
-func processFilesParallelJSON(filenames []string, workers int, config extractor.Config) *printer.JSONPrinter {
+func processFilesParallelJSON(ctx context.Context, filenames []string, workers int, config extractor.Config) *printer.JSONPrinter {
 	// Create channels for jobs and results
 	jobs := make(chan job, len(filenames))
 	results := make(chan jsonFileResult, len(filenames))
@@ -466,7 +528,18 @@ func processFilesParallelJSON(filenames []string, workers int, config extractor.
 	var wg sync.WaitGroup
 	for range workers {
 		wg.Go(func() {
-			for j := range jobs {
+			for {
+				var j job
+				var ok bool
+				select {
+				case <-ctx.Done():
+					return
+				case j, ok = <-jobs:
+					if !ok {
+						return
+					}
+				}
+
 				// Create a temporary JSON printer for this file
 				var buf bytes.Buffer
 				tempPrinter := printer.NewJSONPrinter(config, &buf)
@@ -478,9 +551,9 @@ func processFilesParallelJSON(filenames []string, workers int, config extractor.
 
 				if config.Recursive {
 					tempPrinter.SetFileInfo(j.filename, "archive", nil)
-					err = extractFile(j.filename, config, tempPrinter.PrintString)
+					err = extractFile(ctx, j.filename, config, tempPrinter.PrintString)
 					if err != nil {
-						results <- jsonFileResult{index: j.index, filename: j.filename, err: err}
+						sendJSONResult(ctx, results, jsonFileResult{index: j.index, filename: j.filename, err: err})
 						continue
 					}
 					tempPrinter.FinalizeCurrentFile()
@@ -492,17 +565,17 @@ func processFilesParallelJSON(filenames []string, workers int, config extractor.
 					}
 				} else if config.ScanDataOnly {
 					// Process with binary parsing
-					format, sections, strings, err = processFileForJSON(j.filename, config)
+					format, sections, strings, err = processFileForJSON(ctx, j.filename, config)
 				} else {
 					// Regular full-file scanning with automatic mmap optimization
 					tempPrinter.SetFileInfo(j.filename, "", nil)
-					err = extractor.ExtractStringsFromFile(j.filename, config, tempPrinter.PrintString)
+					err = extractor.ExtractStringsFromFile(ctx, j.filename, config, tempPrinter.PrintString)
 					if err != nil {
-						results <- jsonFileResult{
+						sendJSONResult(ctx, results, jsonFileResult{
 							index:    j.index,
 							filename: j.filename,
 							err:      err,
-						}
+						})
 						continue
 					}
 
@@ -520,21 +593,24 @@ func processFilesParallelJSON(filenames []string, workers int, config extractor.
 				if strings == nil {
 					strings = make([]printer.StringResult, 0)
 				}
-				results <- jsonFileResult{
+				sendJSONResult(ctx, results, jsonFileResult{
 					index:    j.index,
 					filename: j.filename,
 					format:   format,
 					sections: sections,
 					strings:  strings,
 					err:      err,
-				}
+				})
 			}
 		})
 	}
 
 	// Send jobs
 	for i, filename := range filenames {
-		jobs <- job{filename: filename, index: i}
+		select {
+		case jobs <- job{filename: filename, index: i}:
+		case <-ctx.Done():
+		}
 	}
 	close(jobs)
 
@@ -553,9 +629,15 @@ func processFilesParallelJSON(filenames []string, workers int, config extractor.
 	// Build final JSON output
 	jsonPrinter := printer.NewJSONPrinter(config, os.Stdout)
 	for _, r := range outputs {
+		// Skip jobs a cancelled worker never produced (zero-value entries).
+		if r.filename == "" {
+			continue
+		}
 		if r.err != nil {
-			// Print error to stderr as well
-			fmt.Fprintf(os.Stderr, "strings: %s: %v\n", r.filename, r.err)
+			// Suppress cancellation noise / JSON error entries; report real errors.
+			if reportErr(r.filename, r.err) {
+				continue
+			}
 		}
 		// Add file result (with error if present)
 		jsonPrinter.AddFileResult(r.filename, r.format, r.sections, r.strings, r.err)
@@ -564,8 +646,17 @@ func processFilesParallelJSON(filenames []string, workers int, config extractor.
 	return jsonPrinter
 }
 
+// sendJSONResult delivers a result unless the context is cancelled first,
+// preventing a worker from blocking forever once the collector has stopped.
+func sendJSONResult(ctx context.Context, results chan<- jsonFileResult, r jsonFileResult) {
+	select {
+	case results <- r:
+	case <-ctx.Done():
+	}
+}
+
 // processFileForJSON processes a single file with binary parsing for JSON output
-func processFileForJSON(filename string, config extractor.Config) (string, []string, []printer.StringResult, error) {
+func processFileForJSON(ctx context.Context, filename string, config extractor.Config) (string, []string, []printer.StringResult, error) {
 	// Determine format
 	var format binary.Format
 	var err error
@@ -605,7 +696,9 @@ func processFileForJSON(filename string, config extractor.Config) (string, []str
 		var buf bytes.Buffer
 		tempPrinter := printer.NewJSONPrinter(config, &buf)
 		tempPrinter.SetFileInfo(filename, format.String(), nil)
-		extractor.ExtractStrings(file, filename, config, tempPrinter.PrintString)
+		if err := extractor.ExtractStrings(ctx, file, filename, config, tempPrinter.PrintString); err != nil {
+			return "", nil, nil, err
+		}
 		tempPrinter.FinalizeCurrentFile()
 
 		if len(tempPrinter.FileResults) > 0 {
@@ -636,7 +729,9 @@ func processFileForJSON(filename string, config extractor.Config) (string, []str
 		var buf bytes.Buffer
 		tempPrinter := printer.NewJSONPrinter(config, &buf)
 		tempPrinter.SetFileInfo(filename, format.String(), sectionNames)
-		extractor.ExtractStrings(file, filename, config, tempPrinter.PrintString)
+		if err := extractor.ExtractStrings(ctx, file, filename, config, tempPrinter.PrintString); err != nil {
+			return "", nil, nil, err
+		}
 		tempPrinter.FinalizeCurrentFile()
 
 		if len(tempPrinter.FileResults) > 0 {
@@ -652,7 +747,9 @@ func processFileForJSON(filename string, config extractor.Config) (string, []str
 	tempPrinter.SetFileInfo(filename, format.String(), sectionNames)
 
 	for _, section := range sections {
-		extractor.ExtractFromSection(section.Data, section.Name, section.Offset, filename, config, tempPrinter.PrintString)
+		if err := extractor.ExtractFromSection(ctx, section.Data, section.Name, section.Offset, filename, config, tempPrinter.PrintString); err != nil {
+			return "", nil, nil, err
+		}
 	}
 
 	tempPrinter.FinalizeCurrentFile()
@@ -665,7 +762,7 @@ func processFileForJSON(filename string, config extractor.Config) (string, []str
 }
 
 // processWithStats processes files or stdin with statistics output
-func processWithStats(files []string, workers int, config extractor.Config, perFile bool) {
+func processWithStats(ctx context.Context, files []string, workers int, config extractor.Config, perFile bool) {
 	// stdin case
 	if len(files) == 0 {
 		s := stats.New(config.MinLength)
@@ -676,7 +773,9 @@ func processWithStats(files []string, workers int, config extractor.Config, perF
 			collectFunc = makeFilterTrackingFunc(s, config)
 		}
 
-		extractor.ExtractStrings(os.Stdin, "", config, collectFunc)
+		if err := extractor.ExtractStrings(ctx, os.Stdin, "", config, collectFunc); err != nil {
+			reportErr("", err)
+		}
 		s.Format(os.Stdout, config.ColorMode)
 		return
 	}
@@ -694,20 +793,26 @@ func processWithStats(files []string, workers int, config extractor.Config, perF
 
 			// Process file with binary parsing if needed
 			if config.Recursive {
-				if err := extractFile(filename, config, collectFunc); err != nil {
-					fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
+				if err := extractFile(ctx, filename, config, collectFunc); err != nil {
+					if reportErr(filename, err) {
+						return
+					}
 					continue
 				}
 			} else if config.ScanDataOnly {
-				if err := processFileWithStatsAndBinaryParsing(filename, config, s); err != nil {
-					fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
+				if err := processFileWithStatsAndBinaryParsing(ctx, filename, config, s); err != nil {
+					if reportErr(filename, err) {
+						return
+					}
 					continue
 				}
 			} else {
 				// Use ExtractStringsFromFile with automatic mmap optimization
 				s.SetFileInfo(filename, "", nil)
-				if err := extractor.ExtractStringsFromFile(filename, config, collectFunc); err != nil {
-					fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
+				if err := extractor.ExtractStringsFromFile(ctx, filename, config, collectFunc); err != nil {
+					if reportErr(filename, err) {
+						return
+					}
 					continue
 				}
 			}
@@ -734,19 +839,25 @@ func processWithStats(files []string, workers int, config extractor.Config, perF
 	if len(files) == 1 || workers == 1 {
 		for _, filename := range files {
 			if config.Recursive {
-				if err := extractFile(filename, config, collectFunc); err != nil {
-					fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
+				if err := extractFile(ctx, filename, config, collectFunc); err != nil {
+					if reportErr(filename, err) {
+						break
+					}
 					continue
 				}
 			} else if config.ScanDataOnly {
-				if err := processFileWithStatsAndBinaryParsing(filename, config, aggregated); err != nil {
-					fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
+				if err := processFileWithStatsAndBinaryParsing(ctx, filename, config, aggregated); err != nil {
+					if reportErr(filename, err) {
+						break
+					}
 					continue
 				}
 			} else {
 				// Use ExtractStringsFromFile with automatic mmap optimization
-				if err := extractor.ExtractStringsFromFile(filename, config, collectFunc); err != nil {
-					fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
+				if err := extractor.ExtractStringsFromFile(ctx, filename, config, collectFunc); err != nil {
+					if reportErr(filename, err) {
+						break
+					}
 					continue
 				}
 			}
@@ -760,7 +871,18 @@ func processWithStats(files []string, workers int, config extractor.Config, perF
 		// Start workers
 		for range workers {
 			wg.Go(func() {
-				for j := range jobs {
+				for {
+					var j job
+					var ok bool
+					select {
+					case <-ctx.Done():
+						return
+					case j, ok = <-jobs:
+						if !ok {
+							return
+						}
+					}
+
 					s := stats.New(config.MinLength)
 
 					// Create wrapper function for filter tracking if needed
@@ -769,35 +891,40 @@ func processWithStats(files []string, workers int, config extractor.Config, perF
 						localCollectFunc = makeFilterTrackingFunc(s, config)
 					}
 
+					res := s
 					if config.Recursive {
-						if err := extractFile(j.filename, config, localCollectFunc); err != nil {
-							fmt.Fprintf(os.Stderr, "strings: %s: %v\n", j.filename, err)
-							results <- nil
-							continue
+						if err := extractFile(ctx, j.filename, config, localCollectFunc); err != nil {
+							reportErr(j.filename, err)
+							res = nil
 						}
 					} else if config.ScanDataOnly {
-						if err := processFileWithStatsAndBinaryParsing(j.filename, config, s); err != nil {
-							fmt.Fprintf(os.Stderr, "strings: %s: %v\n", j.filename, err)
-							results <- nil
-							continue
+						if err := processFileWithStatsAndBinaryParsing(ctx, j.filename, config, s); err != nil {
+							reportErr(j.filename, err)
+							res = nil
 						}
 					} else {
 						// Use ExtractStringsFromFile with automatic mmap optimization
-						if err := extractor.ExtractStringsFromFile(j.filename, config, localCollectFunc); err != nil {
-							fmt.Fprintf(os.Stderr, "strings: %s: %v\n", j.filename, err)
-							results <- nil
-							continue
+						if err := extractor.ExtractStringsFromFile(ctx, j.filename, config, localCollectFunc); err != nil {
+							reportErr(j.filename, err)
+							res = nil
 						}
 					}
 
-					results <- s
+					select {
+					case results <- res:
+					case <-ctx.Done():
+						return
+					}
 				}
 			})
 		}
 
 		// Send jobs
 		for _, filename := range files {
-			jobs <- job{filename: filename}
+			select {
+			case jobs <- job{filename: filename}:
+			case <-ctx.Done():
+			}
 		}
 		close(jobs)
 
@@ -820,11 +947,13 @@ func processWithStats(files []string, workers int, config extractor.Config, perF
 }
 
 // processWithTriage processes files or stdin with security-triage output.
-func processWithTriage(files []string, workers int, config extractor.Config) {
+func processWithTriage(ctx context.Context, files []string, workers int, config extractor.Config) {
 	// stdin case
 	if len(files) == 0 {
 		tp := printer.NewTriagePrinter(config, os.Stdout)
-		extractor.ExtractStrings(os.Stdin, "", config, tp.PrintString)
+		if err := extractor.ExtractStrings(ctx, os.Stdin, "", config, tp.PrintString); err != nil {
+			reportErr("", err)
+		}
 		return
 	}
 
@@ -836,17 +965,35 @@ func processWithTriage(files []string, workers int, config extractor.Config) {
 		var wg sync.WaitGroup
 		for range workers {
 			wg.Go(func() {
-				for j := range jobs {
+				for {
+					var j job
+					var ok bool
+					select {
+					case <-ctx.Done():
+						return
+					case j, ok = <-jobs:
+						if !ok {
+							return
+						}
+					}
+
 					var buf bytes.Buffer
 					tp := printer.NewTriagePrinter(config, &buf)
-					err := extractFile(j.filename, config, tp.PrintString)
-					results <- result{index: j.index, output: buf.String(), err: err}
+					err := extractFile(ctx, j.filename, config, tp.PrintString)
+					select {
+					case results <- result{index: j.index, output: buf.String(), err: err}:
+					case <-ctx.Done():
+						return
+					}
 				}
 			})
 		}
 
 		for i, filename := range files {
-			jobs <- job{filename: filename, index: i}
+			select {
+			case jobs <- job{filename: filename, index: i}:
+			case <-ctx.Done():
+			}
 		}
 		close(jobs)
 
@@ -862,7 +1009,7 @@ func processWithTriage(files []string, workers int, config extractor.Config) {
 
 		for _, r := range outputs {
 			if r.err != nil {
-				fmt.Fprintf(os.Stderr, "strings: %s: %v\n", files[r.index], r.err)
+				reportErr(files[r.index], r.err)
 				continue
 			}
 			fmt.Print(r.output)
@@ -873,8 +1020,10 @@ func processWithTriage(files []string, workers int, config extractor.Config) {
 	// Sequential (single file or workers=1)
 	tp := printer.NewTriagePrinter(config, os.Stdout)
 	for _, filename := range files {
-		if err := extractFile(filename, config, tp.PrintString); err != nil {
-			fmt.Fprintf(os.Stderr, "strings: %s: %v\n", filename, err)
+		if err := extractFile(ctx, filename, config, tp.PrintString); err != nil {
+			if reportErr(filename, err) {
+				break
+			}
 			continue
 		}
 	}
@@ -883,7 +1032,7 @@ func processWithTriage(files []string, workers int, config extractor.Config) {
 // extractFileWithBinaryParsing detects the binary format, extracts strings from
 // its data sections (falling back to a full scan when parsing fails or no
 // sections are found), and routes each string through printFunc.
-func extractFileWithBinaryParsing(filename string, config extractor.Config, printFunc func([]byte, string, int64, extractor.Config)) error {
+func extractFileWithBinaryParsing(ctx context.Context, filename string, config extractor.Config, printFunc func([]byte, string, int64, extractor.Config)) error {
 	// Determine format
 	var format binary.Format
 	var err error
@@ -909,23 +1058,25 @@ func extractFileWithBinaryParsing(filename string, config extractor.Config, prin
 	sections, err := binary.ParseBinary(filename, format)
 	if err != nil {
 		// Fall back to regular scanning if parsing fails
-		return scanWholeFile(filename, config, printFunc)
+		return scanWholeFile(ctx, filename, config, printFunc)
 	}
 
 	// If no sections found (raw binary), scan the whole file
 	if len(sections) == 0 {
-		return scanWholeFile(filename, config, printFunc)
+		return scanWholeFile(ctx, filename, config, printFunc)
 	}
 
 	// Extract strings from each data section
 	for _, section := range sections {
-		extractor.ExtractFromSection(section.Data, section.Name, section.Offset, filename, config, printFunc)
+		if err := extractor.ExtractFromSection(ctx, section.Data, section.Name, section.Offset, filename, config, printFunc); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 // scanWholeFile opens filename and extracts strings from its entire contents.
-func scanWholeFile(filename string, config extractor.Config, printFunc func([]byte, string, int64, extractor.Config)) error {
+func scanWholeFile(ctx context.Context, filename string, config extractor.Config, printFunc func([]byte, string, int64, extractor.Config)) error {
 	file, openErr := os.Open(filename)
 	if openErr != nil {
 		return openErr
@@ -936,8 +1087,7 @@ func scanWholeFile(filename string, config extractor.Config, printFunc func([]by
 		}
 	}()
 
-	extractor.ExtractStrings(file, filename, config, printFunc)
-	return nil
+	return extractor.ExtractStrings(ctx, file, filename, config, printFunc)
 }
 
 // makeFilterTrackingFunc creates a wrapper function that tracks both filtered and unfiltered counts
@@ -955,7 +1105,7 @@ func makeFilterTrackingFunc(s *stats.Statistics, _ extractor.Config) func([]byte
 }
 
 // processFileWithStatsAndBinaryParsing processes a file with binary parsing for statistics
-func processFileWithStatsAndBinaryParsing(filename string, config extractor.Config, s *stats.Statistics) error {
+func processFileWithStatsAndBinaryParsing(ctx context.Context, filename string, config extractor.Config, s *stats.Statistics) error {
 	// Determine format
 	var format binary.Format
 	var err error
@@ -1000,8 +1150,7 @@ func processFileWithStatsAndBinaryParsing(filename string, config extractor.Conf
 			collectFunc = makeFilterTrackingFunc(s, config)
 		}
 
-		extractor.ExtractStrings(file, filename, config, collectFunc)
-		return nil
+		return extractor.ExtractStrings(ctx, file, filename, config, collectFunc)
 	}
 
 	// Collect section names
@@ -1030,8 +1179,7 @@ func processFileWithStatsAndBinaryParsing(filename string, config extractor.Conf
 			collectFunc = makeFilterTrackingFunc(s, config)
 		}
 
-		extractor.ExtractStrings(file, filename, config, collectFunc)
-		return nil
+		return extractor.ExtractStrings(ctx, file, filename, config, collectFunc)
 	}
 
 	// Create wrapper function for filter tracking if needed
@@ -1042,7 +1190,9 @@ func processFileWithStatsAndBinaryParsing(filename string, config extractor.Conf
 
 	// Extract strings from data sections
 	for _, section := range sections {
-		extractor.ExtractFromSection(section.Data, section.Name, section.Offset, filename, config, collectFunc)
+		if err := extractor.ExtractFromSection(ctx, section.Data, section.Name, section.Offset, filename, config, collectFunc); err != nil {
+			return err
+		}
 	}
 
 	return nil

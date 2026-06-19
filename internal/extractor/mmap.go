@@ -1,7 +1,9 @@
 package extractor
 
 import (
+	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -42,16 +44,17 @@ func shouldUseMmap(path string, config Config) bool {
 //
 // This function provides transparent optimization - it will use mmap when
 // beneficial and fall back to buffered I/O when appropriate.
-func ExtractStringsFromFile(path string, config Config, printFunc func([]byte, string, int64, Config)) error {
+func ExtractStringsFromFile(ctx context.Context, path string, config Config, printFunc printFunc) error {
 	// Decide whether to use mmap
 	if shouldUseMmap(path, config) {
 		// Try mmap first
-		err := extractStringsWithMmap(path, config, printFunc)
-		if err == nil {
-			return nil
+		err := extractStringsWithMmap(ctx, path, config, printFunc)
+		// Success or cancellation: return as-is. Only a genuine mmap failure
+		// (permissions, OS limits, etc.) should trigger the buffered fallback —
+		// a cancelled context must not be retried.
+		if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
 		}
-		// If mmap fails, fall back to buffered I/O
-		// This can happen due to permissions, OS limits, etc.
 		fmt.Fprintf(os.Stderr, "warning: mmap failed for %s: %v, falling back to buffered I/O\n", path, err)
 	}
 
@@ -67,14 +70,13 @@ func ExtractStringsFromFile(path string, config Config, printFunc func([]byte, s
 		}
 	}()
 
-	ExtractStrings(file, path, config, printFunc)
-	return nil
+	return ExtractStrings(ctx, file, path, config, printFunc)
 }
 
 // extractStringsWithMmap extracts strings using memory-mapped I/O.
 // It uses the golang.org/x/exp/mmap package to map the file into memory
 // and then delegates to the appropriate *FromBytes() function.
-func extractStringsWithMmap(path string, config Config, printFunc func([]byte, string, int64, Config)) error {
+func extractStringsWithMmap(ctx context.Context, path string, config Config, printFunc printFunc) error {
 	// Open the file with mmap
 	reader, err := mmap.Open(path)
 	if err != nil {
@@ -89,6 +91,11 @@ func extractStringsWithMmap(path string, config Config, printFunc func([]byte, s
 
 	// Get the file size from the mmap reader (avoids redundant syscall)
 	fileSize := int64(reader.Len())
+
+	// Bail out before the (uninterruptible) bulk read if already cancelled.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	// Read the entire file into memory
 	// Note: mmap.ReaderAt implements ReadAt, we need to read into a slice
@@ -106,41 +113,45 @@ func extractStringsWithMmap(path string, config Config, printFunc func([]byte, s
 		// 7-bit ASCII
 		if config.Unicode != "" && config.Unicode != "default" && config.Unicode != "invalid" {
 			// UTF-8 aware mode
-			extractUTF8AwareFromBytes(data, path, config, printFunc)
-		} else {
-			extractASCIIFromBytes(data, 0, path, config, printFunc, false)
+			return extractUTF8AwareFromBytes(ctx, data, path, config, printFunc)
 		}
+		return extractASCIIFromBytes(ctx, data, 0, path, config, printFunc, false)
 	case "S":
 		// 8-bit ASCII
-		extractASCIIFromBytes(data, 0, path, config, printFunc, true)
+		return extractASCIIFromBytes(ctx, data, 0, path, config, printFunc, true)
 	case "b":
 		// UTF-16 big-endian
-		extractUTF16FromBytes(data, 0, path, config, printFunc, binary.BigEndian)
+		return extractUTF16FromBytes(ctx, data, 0, path, config, printFunc, binary.BigEndian)
 	case "l":
 		// UTF-16 little-endian
-		extractUTF16FromBytes(data, 0, path, config, printFunc, binary.LittleEndian)
+		return extractUTF16FromBytes(ctx, data, 0, path, config, printFunc, binary.LittleEndian)
 	case "B":
 		// UTF-32 big-endian
-		extractUTF32FromBytes(data, 0, path, config, printFunc, binary.BigEndian)
+		return extractUTF32FromBytes(ctx, data, 0, path, config, printFunc, binary.BigEndian)
 	case "L":
 		// UTF-32 little-endian
-		extractUTF32FromBytes(data, 0, path, config, printFunc, binary.LittleEndian)
+		return extractUTF32FromBytes(ctx, data, 0, path, config, printFunc, binary.LittleEndian)
 	default:
 		return fmt.Errorf("unsupported encoding: %s", config.Encoding)
 	}
-
-	return nil
 }
 
 // extractUTF8AwareFromBytes is a helper that wraps the byte-slice extraction
 // for UTF-8 aware mode. This function didn't exist before, so we create it here.
-func extractUTF8AwareFromBytes(data []byte, filename string, config Config, printFunc func([]byte, string, int64, Config)) {
+func extractUTF8AwareFromBytes(ctx context.Context, data []byte, filename string, config Config, printFunc printFunc) error {
 	// For UTF-8 aware mode, we need to process byte-by-byte like the streaming version
 	// We can't use the simple ASCII extractor because we need UTF-8 validation
 	var currentString []byte
 	var startOffset int64
+	nextCheck := 0 // index at which to next poll ctx (variable-stride loop)
 
 	for i := 0; i < len(data); {
+		if i >= nextCheck {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			nextCheck = i + ctxChunk
+		}
 		b := data[i]
 
 		// Check if this is the start of a UTF-8 sequence
@@ -194,4 +205,5 @@ func extractUTF8AwareFromBytes(data []byte, filename string, config Config, prin
 			printFunc(currentString, filename, startOffset, config)
 		}
 	}
+	return nil
 }

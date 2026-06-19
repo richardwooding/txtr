@@ -2,6 +2,7 @@ package extractor
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"testing"
 )
@@ -173,7 +174,7 @@ func benchmarkExtractASCII(b *testing.B, size int) {
 
 	for i := 0; i < b.N; i++ {
 		reader := bytes.NewReader(data)
-		extractASCII(reader, "", config, printFunc, false)
+		_ = extractASCII(context.Background(), reader, "", config, printFunc, false)
 	}
 
 	// Calculate and report throughput
@@ -208,7 +209,7 @@ func benchmarkExtract8BitASCII(b *testing.B, size int) {
 
 	for i := 0; i < b.N; i++ {
 		reader := bytes.NewReader(data)
-		extractASCII(reader, "", config, printFunc, false)
+		_ = extractASCII(context.Background(), reader, "", config, printFunc, false)
 	}
 
 	throughput := float64(size) * float64(b.N) / b.Elapsed().Seconds() / 1e6
@@ -247,7 +248,7 @@ func benchmarkExtractUTF8(b *testing.B, size int) {
 
 			for i := 0; i < b.N; i++ {
 				reader := bytes.NewReader(data)
-				extractUTF8Aware(reader, "", config, printFunc)
+				_ = extractUTF8Aware(context.Background(), reader, "", config, printFunc)
 			}
 
 			throughput := float64(size) * float64(b.N) / b.Elapsed().Seconds() / 1e6
@@ -301,7 +302,7 @@ func benchmarkExtractUTF16(b *testing.B, size int, littleEndian bool) {
 
 	for i := 0; i < b.N; i++ {
 		reader := bytes.NewReader(data)
-		extractUTF16(reader, "", config, printFunc, byteOrder)
+		_ = extractUTF16(context.Background(), reader, "", config, printFunc, byteOrder)
 	}
 
 	throughput := float64(size) * float64(b.N) / b.Elapsed().Seconds() / 1e6
@@ -353,7 +354,7 @@ func benchmarkExtractUTF32(b *testing.B, size int, littleEndian bool) {
 
 	for i := 0; i < b.N; i++ {
 		reader := bytes.NewReader(data)
-		extractUTF32(reader, "", config, printFunc, byteOrder)
+		_ = extractUTF32(context.Background(), reader, "", config, printFunc, byteOrder)
 	}
 
 	throughput := float64(size) * float64(b.N) / b.Elapsed().Seconds() / 1e6
@@ -402,7 +403,7 @@ func benchmarkWithData(b *testing.B, data []byte) {
 
 	for i := 0; i < b.N; i++ {
 		reader := bytes.NewReader(data)
-		extractASCII(reader, "", config, printFunc, false)
+		_ = extractASCII(context.Background(), reader, "", config, printFunc, false)
 	}
 
 	throughput := float64(len(data)) * float64(b.N) / b.Elapsed().Seconds() / 1e6
@@ -440,7 +441,7 @@ func benchmarkExtractASCIIWithMinLength(b *testing.B, minLength int) {
 
 	for i := 0; i < b.N; i++ {
 		reader := bytes.NewReader(data)
-		extractASCII(reader, "", config, printFunc, false)
+		_ = extractASCII(context.Background(), reader, "", config, printFunc, false)
 	}
 
 	throughput := float64(len(data)) * float64(b.N) / b.Elapsed().Seconds() / 1e6
@@ -460,7 +461,7 @@ func BenchmarkEncodingComparison_10MB(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			reader := bytes.NewReader(data)
-			extractASCII(reader, "", config, printFunc, false)
+			_ = extractASCII(context.Background(), reader, "", config, printFunc, false)
 		}
 		throughput := float64(size) * float64(b.N) / b.Elapsed().Seconds() / 1e6
 		b.ReportMetric(throughput, "MB/s")
@@ -474,7 +475,7 @@ func BenchmarkEncodingComparison_10MB(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			reader := bytes.NewReader(data)
-			extractASCII(reader, "", config, printFunc, false)
+			_ = extractASCII(context.Background(), reader, "", config, printFunc, false)
 		}
 		throughput := float64(size) * float64(b.N) / b.Elapsed().Seconds() / 1e6
 		b.ReportMetric(throughput, "MB/s")
@@ -488,7 +489,7 @@ func BenchmarkEncodingComparison_10MB(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			reader := bytes.NewReader(data)
-			extractUTF8Aware(reader, "", config, printFunc)
+			_ = extractUTF8Aware(context.Background(), reader, "", config, printFunc)
 		}
 		throughput := float64(size) * float64(b.N) / b.Elapsed().Seconds() / 1e6
 		b.ReportMetric(throughput, "MB/s")
@@ -502,7 +503,7 @@ func BenchmarkEncodingComparison_10MB(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			reader := bytes.NewReader(data)
-			extractUTF16(reader, "", config, printFunc, binary.LittleEndian)
+			_ = extractUTF16(context.Background(), reader, "", config, printFunc, binary.LittleEndian)
 		}
 		throughput := float64(size) * float64(b.N) / b.Elapsed().Seconds() / 1e6
 		b.ReportMetric(throughput, "MB/s")
@@ -516,7 +517,7 @@ func BenchmarkEncodingComparison_10MB(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			reader := bytes.NewReader(data)
-			extractUTF32(reader, "", config, printFunc, binary.LittleEndian)
+			_ = extractUTF32(context.Background(), reader, "", config, printFunc, binary.LittleEndian)
 		}
 		throughput := float64(size) * float64(b.N) / b.Elapsed().Seconds() / 1e6
 		b.ReportMetric(throughput, "MB/s")

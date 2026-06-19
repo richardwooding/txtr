@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -88,7 +89,7 @@ func benchmarkSequential(b *testing.B, files []string) {
 
 	for i := 0; i < b.N; i++ {
 		for _, filename := range files {
-			_ = extractor.ExtractStringsFromFile(filename, config, printFunc)
+			_ = extractor.ExtractStringsFromFile(context.Background(), filename, config, printFunc)
 		}
 	}
 
@@ -139,7 +140,7 @@ func benchmarkParallel(b *testing.B, files []string, workers int) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		processFilesParallel(files, workers, config)
+		processFilesParallel(context.Background(), files, workers, config)
 	}
 
 	throughput := float64(totalSize) * float64(b.N) / b.Elapsed().Seconds() / 1e6
@@ -160,7 +161,7 @@ func BenchmarkSpeedup_4Files(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			for _, filename := range files {
-				_ = extractor.ExtractStringsFromFile(filename, config, printFunc)
+				_ = extractor.ExtractStringsFromFile(context.Background(), filename, config, printFunc)
 			}
 		}
 	})
@@ -168,14 +169,14 @@ func BenchmarkSpeedup_4Files(b *testing.B) {
 	b.Run("Parallel-2cores", func(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			processFilesParallel(files, 2, config)
+			processFilesParallel(context.Background(), files, 2, config)
 		}
 	})
 
 	b.Run("Parallel-4cores", func(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			processFilesParallel(files, 4, config)
+			processFilesParallel(context.Background(), files, 4, config)
 		}
 	})
 }
@@ -192,7 +193,7 @@ func BenchmarkSpeedup_8Files(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			for _, filename := range files {
-				_ = extractor.ExtractStringsFromFile(filename, config, printFunc)
+				_ = extractor.ExtractStringsFromFile(context.Background(), filename, config, printFunc)
 			}
 		}
 	})
@@ -200,21 +201,21 @@ func BenchmarkSpeedup_8Files(b *testing.B) {
 	b.Run("Parallel-2cores", func(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			processFilesParallel(files, 2, config)
+			processFilesParallel(context.Background(), files, 2, config)
 		}
 	})
 
 	b.Run("Parallel-4cores", func(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			processFilesParallel(files, 4, config)
+			processFilesParallel(context.Background(), files, 4, config)
 		}
 	})
 
 	b.Run("Parallel-8cores", func(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			processFilesParallel(files, 8, config)
+			processFilesParallel(context.Background(), files, 8, config)
 		}
 	})
 }
@@ -236,7 +237,7 @@ func BenchmarkProcessing_AutoWorkers(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		processFilesParallel(files, workers, config)
+		processFilesParallel(context.Background(), files, workers, config)
 	}
 
 	throughput := float64(totalSize) * float64(b.N) / b.Elapsed().Seconds() / 1e6
@@ -278,7 +279,7 @@ func BenchmarkParallelOverhead(b *testing.B) {
 		b.Run(formatWorkers(workers), func(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				processFilesParallel(files, workers, config)
+				processFilesParallel(context.Background(), files, workers, config)
 			}
 		})
 	}
@@ -311,7 +312,7 @@ func BenchmarkFileWorkerBalance(b *testing.B) {
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				processFilesParallel(files, tc.workers, config)
+				processFilesParallel(context.Background(), files, tc.workers, config)
 			}
 		})
 	}
@@ -330,7 +331,7 @@ func BenchmarkParallel_Allocations(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		processFilesParallel(files, 4, config)
+		processFilesParallel(context.Background(), files, 4, config)
 	}
 }
 

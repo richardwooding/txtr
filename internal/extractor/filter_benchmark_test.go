@@ -2,6 +2,7 @@ package extractor
 
 import (
 	"bytes"
+	"context"
 	"regexp"
 	"testing"
 )
@@ -143,7 +144,7 @@ func BenchmarkExtractWithFilter_NoFilter(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		reader := bytes.NewReader(data)
-		extractASCII(reader, "", config, printFunc, false)
+		_ = extractASCII(context.Background(), reader, "", config, printFunc, false)
 	}
 
 	throughput := float64(len(data)) * float64(b.N) / b.Elapsed().Seconds() / 1e6
@@ -165,7 +166,7 @@ func BenchmarkExtractWithFilter_SimplePattern(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		reader := bytes.NewReader(data)
-		extractASCII(reader, "", config, printFunc, false)
+		_ = extractASCII(context.Background(), reader, "", config, printFunc, false)
 	}
 
 	throughput := float64(len(data)) * float64(b.N) / b.Elapsed().Seconds() / 1e6
@@ -189,7 +190,7 @@ func BenchmarkExtractWithFilter_ComplexPattern(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		reader := bytes.NewReader(data)
-		extractASCII(reader, "", config, printFunc, false)
+		_ = extractASCII(context.Background(), reader, "", config, printFunc, false)
 	}
 
 	throughput := float64(len(data)) * float64(b.N) / b.Elapsed().Seconds() / 1e6
@@ -215,7 +216,7 @@ func BenchmarkExtractWithFilter_MultiplePatterns(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		reader := bytes.NewReader(data)
-		extractASCII(reader, "", config, printFunc, false)
+		_ = extractASCII(context.Background(), reader, "", config, printFunc, false)
 	}
 
 	throughput := float64(len(data)) * float64(b.N) / b.Elapsed().Seconds() / 1e6
