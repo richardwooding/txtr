@@ -61,8 +61,8 @@ func (tp *TriagePrinter) PrintString(str []byte, filename string, offset int64, 
 	case res.HighEntropy:
 		tag := tp.colorTag("HIGH-ENT", AnsiMagenta)
 		tp.writeLine(prefix, tag, offsetStr, fmt.Sprintf("entropy=%.1f", res.Entropy), preview)
-	case len(res.Categories) > 0:
-		cat := string(res.Categories[0])
+	case res.Category != "":
+		cat := string(res.Category)
 		tag := tp.colorTag(cat, AnsiCyan)
 		tp.writeLine(prefix, tag, offsetStr, "", preview)
 	default:

@@ -116,8 +116,8 @@ func (jp *JSONPrinter) PrintString(str []byte, filename string, offset int64, co
 		result.Entropy = res.Entropy
 		result.HighEntropy = res.HighEntropy
 		result.Secrets = res.Secrets
-		for _, c := range res.Categories {
-			result.Categories = append(result.Categories, string(c))
+		if res.Category != "" {
+			result.Categories = append(result.Categories, string(res.Category))
 		}
 	}
 
