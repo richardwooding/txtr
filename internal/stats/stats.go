@@ -100,8 +100,8 @@ func (s *Statistics) Add(str []byte, _ string, offset int64, config extractor.Co
 	// Triage classification (only when enabled)
 	if config.TriageMode {
 		res := triage.Classify(str, config.MinEntropy)
-		for _, c := range res.Categories {
-			s.CategoryCounts[string(c)]++
+		if res.Category != "" {
+			s.CategoryCounts[string(res.Category)]++
 		}
 		for _, sec := range res.Secrets {
 			s.SecretCounts[sec.Rule]++
