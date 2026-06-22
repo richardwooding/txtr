@@ -10,8 +10,8 @@ github.com/klauspost/compress v1.18.6 h1:2jupLlAwFm95+YDR+NwD2MEfFO9d4z4Prjl1XXD
 github.com/klauspost/compress v1.18.6/go.mod h1:cwPg85FWrGar70rWktvGQj8/hthj3wpl0PGDogxkrSQ=
 github.com/richardwooding/archives v0.2.0 h1:qEHu8GLM0OpTb1TWj3pCNriNDarFMuzqL/BTniR5LJ0=
 github.com/richardwooding/archives v0.2.0/go.mod h1:j+3Xf8avzoJV6Qj+IGuvzvCWtOQGl+ixUW4a3mzK8bE=
-github.com/richardwooding/triage v0.1.0 h1:EAnmEh/wlI0EJypyY73JM7SH/gg2vMne0HqHCQsbW1k=
-github.com/richardwooding/triage v0.1.0/go.mod h1:nbnguCFTQ9NOAS0iFBytSInQITjfKwx8LPd3XOPqBOk=
+github.com/richardwooding/triage v0.5.0 h1:9iMWfeoz8mPpzrAqiSHKlKq56zGKxr2SghVpGLzG50M=
+github.com/richardwooding/triage v0.5.0/go.mod h1:nbnguCFTQ9NOAS0iFBytSInQITjfKwx8LPd3XOPqBOk=
 github.com/ulikunitz/xz v0.5.15 h1:9DNdB5s+SgV3bQ2ApL10xRc35ck0DuIX/isZvIk+ubY=
 github.com/ulikunitz/xz v0.5.15/go.mod h1:nbz6k7qbPmH4IRqmfOplQw/tblSgqTqBwxkY0oWt/14=
 golang.org/x/exp v0.0.0-20251113190631-e25ba8c21ef6 h1:zfMcR1Cs4KNuomFFgGefv5N0czO2XZpUbxGUy8i8ug0=
