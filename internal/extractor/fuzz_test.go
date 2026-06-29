@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -359,29 +360,16 @@ func FuzzFilterPatterns(f *testing.F) {
 	f.Add("unicode: 世界", ".*", "", false)                                        // Unicode
 	f.Add("0xDEADBEEF", "0x[0-9a-fA-F]+", "", false)                             // Hex pattern
 
-	f.Fuzz(func(t *testing.T, input string, matchPattern string, excludePattern string, ignoreCase bool) {
-		// Timeout protection against ReDoS
-		done := make(chan bool, 1)
-		timeout := false
-		go func() {
-			time.Sleep(1 * time.Second)
-			select {
-			case <-done:
-				return
-			default:
-				timeout = true
-				done <- true
-			}
-		}()
+	// Regression seeds: large inputs scanned against greedy patterns. The daily
+	// fuzz run repeatedly flagged ~14 KiB inputs (CI runs 2026-06-22 / 2026-06-28)
+	// as "ReDoS" when the old 1s wall-clock budget wrapped six linear scans on a
+	// loaded runner. RE2 is linear, so these must stay comfortably under budget.
+	f.Add(strings.Repeat("a", 16*1024), ".*", "", false)                   // Greedy match over large input
+	f.Add(strings.Repeat("ab ", 8*1024), "(?i)(error|warning)", "", false) // Alternation, case-insensitive
+	f.Add(strings.Repeat("x", 16*1024), "", "x+", false)                   // Greedy exclude over large input
 
+	f.Fuzz(func(t *testing.T, input string, matchPattern string, excludePattern string, ignoreCase bool) {
 		defer func() {
-			select {
-			case done <- true:
-			default:
-			}
-			if timeout {
-				t.Fatal("Timeout: possible ReDoS attack with patterns")
-			}
 			if r := recover(); r != nil {
 				t.Fatalf("Panic during pattern filtering: %v\nInput: %q\nMatch: %q\nExclude: %q\nIgnoreCase: %v",
 					r, input, matchPattern, excludePattern, ignoreCase)
@@ -393,8 +381,10 @@ func FuzzFilterPatterns(f *testing.F) {
 			t.Skip("No patterns to test")
 		}
 
-		// Skip extremely long inputs
-		if len(input) > 1*1024*1024 { // 1MB limit
+		// Skip inputs larger than any realistic extracted string. The filter only
+		// ever sees individual strings, so multi-KB adversarial blobs are not
+		// representative; capping here keeps the latency budget meaningful.
+		if len(input) > 64*1024 { // 64 KiB
 			t.Skip("Input too large")
 		}
 
@@ -423,8 +413,23 @@ func FuzzFilterPatterns(f *testing.F) {
 			ExcludePatterns: excludeRegexps,
 		}
 
-		// Test filtering - should not panic
-		result := ShouldPrintString([]byte(input), config)
+		// Latency guard around the production call only. Go's regexp is RE2-based
+		// (linear time, no catastrophic backtracking), so this cannot detect a true
+		// ReDoS — it catches a runaway loop or pathological linear blow-up. The
+		// invariant re-matches below are test-only overhead and are excluded from
+		// the budget. The budget is generous to tolerate loaded/throttled CI runners.
+		var result bool
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			result = ShouldPrintString([]byte(input), config)
+		}()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("ShouldPrintString exceeded latency budget\nInput len: %d\nMatch: %q\nExclude: %q\nIgnoreCase: %v",
+				len(input), matchPattern, excludePattern, ignoreCase)
+		}
 
 		// Check invariants
 		// 1. Result should be deterministic
