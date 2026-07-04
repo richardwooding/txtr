@@ -4,6 +4,8 @@ A clone of GNU strings utility written in Go 1.26.
 
 Extracts printable strings from binary files. Aims to be compatible with GNU strings.
 
+**Website:** [richardwooding.github.io/txtr](https://richardwooding.github.io/txtr/)
+
 ## Installation
 
 ### Homebrew (Recommended for macOS/Linux)
