@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>txtr — extract strings from binaries, better than strings(1)</title>
-<meta name="description" content="A GNU strings-compatible extractor written in Go: binary-format aware, with security triage (entropy + secret detection), archive recursion, JSON/stats output, and parallel scanning.">
+<meta name="description" content="A GNU strings-compatible extractor: binary-format aware, with security triage (entropy + secret detection), archive recursion, JSON/stats output, and parallel scanning.">
 <meta property="og:title" content="txtr">
-<meta property="og:description" content="Extract strings from binaries — better than GNU strings. Triage, archive recursion, JSON, single Go binary.">
+<meta property="og:description" content="Extract strings from binaries — better than GNU strings. Triage, archive recursion, JSON, single static binary.">
 <meta property="og:type" content="website">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' rx='6' fill='%23161b22'/><rect x='5' y='12' width='3.5' height='7' rx='1' fill='%23a371f7'/><rect x='10.25' y='8' width='3.5' height='11' rx='1' fill='%23bd93ff'/><rect x='15.5' y='4' width='3.5' height='15' rx='1' fill='%23d2b3ff'/></svg>">
 <script>try{var t=localStorage.getItem("gl-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
@@ -45,9 +45,9 @@
   <section class="gl-hero">
     <div class="gl-wrap gl-hero-grid">
       <div>
-        <p class="gl-eyebrow">go · single binary · strings(1) compatible</p>
+        <p class="gl-eyebrow">single binary · cross-platform · strings(1) compatible</p>
         <h1>Pull strings out of binaries. <span class="gl-grad">Better than strings(1).</span></h1>
-        <p class="sub">A drop-in <code>strings</code> replacement written in Go — but format-aware, secret-scanning, archive-diving, and JSON-speaking. From quick extraction to first-pass firmware triage in one command.</p>
+        <p class="sub">A drop-in <code>strings</code> replacement — but format-aware, secret-scanning, archive-diving, and JSON-speaking. From quick extraction to first-pass firmware triage in one command.</p>
         <div class="gl-cta">
           <a class="gl-btn primary" href="#install">Install</a>
           <a class="gl-btn ghost" href="https://github.com/richardwooding/txtr">View on GitHub</a>
@@ -105,7 +105,7 @@
 
         <div class="gl-card">
           <h3><span class="gl-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg></span>Fast &amp; parallel</h3>
-          <p>Processes many files across all CPU cores by default (tune with <code>-P</code>), shipped as one static Go binary with no runtime dependencies.</p>
+          <p>Processes many files across all CPU cores by default (tune with <code>-P</code>), shipped as one static binary with no runtime dependencies.</p>
         </div>
 
       </div>
