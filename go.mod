@@ -2,7 +2,7 @@ module github.com/richardwooding/txtr
 
 go 1.26
 
-require github.com/alecthomas/kong v1.15.0
+require github.com/alecthomas/kong v1.16.0
 
 require (
 	github.com/klauspost/compress v1.18.6 // indirect
