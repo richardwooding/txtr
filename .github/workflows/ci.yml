@@ -23,6 +23,9 @@ jobs:
           go-version: stable
           cache: true
 
+      - name: go fix (check)
+        run: go fix -diff ./...
+
       - name: Run tests
         run: set -o pipefail; go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
 
