@@ -54,7 +54,11 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+          # Prefers the standard name every other repo publishing to
+          # richardwooding/homebrew-tap uses. The fallback keeps releases
+          # working until HOMEBREW_TAP_GITHUB_TOKEN is set here; once it is,
+          # drop the fallback and delete the old TAP_GITHUB_TOKEN secret.
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN || secrets.TAP_GITHUB_TOKEN }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
