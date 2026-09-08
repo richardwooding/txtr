@@ -580,3 +580,8 @@ Visit the [Releases page](https://github.com/richardwooding/txtr/releases) to do
 - **Minimal container images**: Based on Chainguard static image (~2MB base)
 - **Reproducible builds**: Same source produces identical binaries
 
+## Sponsor
+
+If this saves you time, you can [sponsor its maintenance](https://github.com/sponsors/richardwooding).
+Sponsorship pays for the unglamorous half — triage, dependency bumps, release plumbing — and is
+never a condition of getting help here.
