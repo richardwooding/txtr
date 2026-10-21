@@ -10,6 +10,6 @@ require (
 )
 
 require (
-	github.com/klauspost/compress v1.18.6 // indirect
+	github.com/klauspost/compress v1.18.7 // indirect
 	github.com/ulikunitz/xz v0.5.15 // indirect
 )
